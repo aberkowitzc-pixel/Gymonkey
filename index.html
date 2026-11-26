@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#16a34a">
+  <meta name="description" content="Gymonkey: registra tus rutinas, series y progreso en el gimnasio.">
+  <title>Gymonkey</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <img src="icon.svg" alt="" class="logo">
+    <h1>Gymonkey</h1>
+  </header>
+
+  <main id="view" aria-live="polite"></main>
+
+  <nav class="tabbar" aria-label="Secciones">
+    <button data-tab="train" class="active"><span>🏋️</span>Entrenar</button>
+    <button data-tab="routines"><span>📋</span>Rutinas</button>
+    <button data-tab="history"><span>🗓️</span>Historial</button>
+    <button data-tab="progress"><span>📈</span>Progreso</button>
+  </nav>
+
+  <dialog id="dialog"></dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
