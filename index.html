@@ -8,13 +8,16 @@
   <title>Gymonkey</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Gymonkey">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="topbar">
     <img src="icon.svg" alt="" class="logo">
     <h1>Gymonkey</h1>
+    <button class="ghost gear" data-action="settings" aria-label="Ajustes">⚙️</button>
   </header>
 
   <main id="view" aria-live="polite"></main>
