@@ -11,7 +11,7 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0e1411;
     --card: #17201b;
     --text: #e8efe9;
@@ -22,6 +22,17 @@
     --danger: #f87171;
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1411;
+  --card: #17201b;
+  --text: #e8efe9;
+  --muted: #94a39a;
+  --line: #26332c;
+  --accent: #22c55e;
+  --accent-soft: #14301f;
+  --danger: #f87171;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -264,3 +275,6 @@ details.card summary { cursor: pointer; }
 .avatar.error::after { background: var(--danger); }
 #toast { position: fixed; left: 50%; top: calc(70px + env(safe-area-inset-top)); transform: translate(-50%, -20px); opacity: 0; z-index: 20; background: var(--text); color: var(--card); padding: 10px 16px; border-radius: 999px; font-size: 0.9rem; transition: 0.25s; pointer-events: none; max-width: 90vw; text-align: center; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+.demo-note { border-color: #f59e0b; font-size: 0.9rem; }
+p.ask { font-size: 1.05rem; line-height: 1.45; margin: 4px 0 8px; }

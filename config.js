@@ -3,6 +3,9 @@
 // Cópiala desde Firebase → Configuración del proyecto → Tus apps → Configuración del SDK.
 // Mientras sea null, la app funciona solo en el dispositivo, sin cuentas ni sincronización.
 export const FIREBASE_CONFIG = null;
+
+// true = la IA se simula con planes de ejemplo (para probar la app sin servidor).
+export const DEMO_AI = false;
 /* Ejemplo:
 export const FIREBASE_CONFIG = {
   apiKey: '...',

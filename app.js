@@ -640,6 +640,7 @@ function viewProgress() {
 /* ---------- diálogos ---------- */
 
 function openDialog(html, onSubmit) {
+  if ($dialog.open) $dialog.close();
   $dialog.innerHTML = `<form method="dialog">${html}</form>`;
   const form = $dialog.querySelector('form');
   form.addEventListener('submit', (ev) => {
@@ -647,6 +648,11 @@ function openDialog(html, onSubmit) {
     onSubmit(new FormData(form), form, ev.submitter?.value);
   });
   $dialog.showModal();
+}
+
+/** Confirmación dentro de la app (sustituye a confirm(), que no funciona en todos los entornos). */
+function ask(message, okLabel, onOk) {
+  openDialog(`<p class="ask">${esc(message)}</p>${dialogButtons(okLabel)}`, () => onOk());
 }
 
 const dialogButtons = (ok) => `<div class="row" style="margin-top:14px"><button class="block" value="cancel" formnovalidate>Cancelar</button><button class="block primary" value="ok">${esc(ok)}</button></div>`;
@@ -800,19 +806,19 @@ const actions = {
     const entries = a.entries
       .map((e) => ({ ...e, sets: e.sets.filter((s) => s.done) }))
       .filter((e) => e.sets.length);
+    const end = () => { state.active = null; clearNotes(); commit(); };
     if (!entries.length) {
-      if (!confirm('No has completado ninguna serie. ¿Descartar el entreno?')) return false;
+      ask('No has completado ninguna serie. ¿Descartar el entreno?', 'Descartar', end);
     } else {
       state.workouts.push({ id: uid(), name: a.name, start: a.start, end: Date.now(), entries });
       tab = 'history';
+      end();
     }
-    state.active = null;
-    clearNotes();
+    return false;
   },
   discard() {
-    if (!confirm('¿Descartar este entreno? Se perderán las series.')) return false;
-    state.active = null;
-    clearNotes();
+    ask('¿Descartar este entreno? Se perderán las series.', 'Descartar', () => { state.active = null; clearNotes(); commit(); });
+    return false;
   },
   settings() {
     const s = state.settings;
@@ -846,7 +852,7 @@ const actions = {
         // Se pide en el mismo toque del usuario, como exigen los navegadores.
         Notification.requestPermission().then((p) => {
           s.notify = p === 'granted';
-          if (!s.notify) alert('No se concedió el permiso de notificaciones. Puedes activarlo en los ajustes del navegador.');
+          if (!s.notify) toast('Permiso de notificaciones denegado: actívalo en los ajustes del navegador');
           commit();
         });
       } else {
@@ -872,8 +878,8 @@ const actions = {
     return false;
   },
   'delete-routine'(id) {
-    if (!confirm('¿Borrar esta rutina?')) return false;
-    state.routines = state.routines.filter((r) => r.id !== id);
+    ask('¿Borrar esta rutina?', 'Borrar', () => { state.routines = state.routines.filter((r) => r.id !== id); commit(); });
+    return false;
   },
   'new-exercise'() { exerciseDialog(null); return false; },
   'edit-exercise'(id) { exerciseDialog(exById(id)); return false; },
@@ -882,14 +888,20 @@ const actions = {
     const msg = usedInHistory
       ? 'Este ejercicio aparece en tu historial. ¿Borrarlo de todos modos? El historial lo mostrará como "Ejercicio eliminado".'
       : '¿Borrar este ejercicio?';
-    if (!confirm(msg)) return false;
-    state.exercises = state.exercises.filter((e) => e.id !== id);
-    state.routines.forEach((r) => { r.exerciseIds = r.exerciseIds.filter((x) => x !== id); });
+    ask(msg, 'Borrar', () => {
+      state.exercises = state.exercises.filter((e) => e.id !== id);
+      state.routines.forEach((r) => { r.exerciseIds = r.exerciseIds.filter((x) => x !== id); });
+      commit();
+    });
+    return false;
   },
   'delete-workout'(id) {
-    if (!confirm('¿Borrar este entreno del historial?')) return false;
-    state.workouts = state.workouts.filter((w) => w.id !== id);
-    state.meta.deletedWorkouts = [...state.meta.deletedWorkouts, id].slice(-500);
+    ask('¿Borrar este entreno del historial?', 'Borrar', () => {
+      state.workouts = state.workouts.filter((w) => w.id !== id);
+      state.meta.deletedWorkouts = [...state.meta.deletedWorkouts, id].slice(-500);
+      commit();
+    });
+    return false;
   },
   export() {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -908,11 +920,12 @@ const actions = {
       try {
         const data = JSON.parse(await input.files[0].text());
         if (!Array.isArray(data.exercises) || !Array.isArray(data.workouts) || !Array.isArray(data.routines)) throw new Error();
-        if (!confirm('Esto reemplazará todos tus datos actuales. ¿Continuar?')) return;
-        state = migrate({ ...defaultState(), ...data });
-        commit();
+        ask('Esto reemplazará todos tus datos actuales. ¿Continuar?', 'Reemplazar', () => {
+          state = migrate({ ...defaultState(), ...data });
+          commit();
+        });
       } catch (_) {
-        alert('El archivo no es una copia válida de Gymonkey.');
+        toast('El archivo no es una copia válida de Gymonkey');
       }
     };
     input.click();
@@ -1070,7 +1083,7 @@ function renderAccount() {
 
 Object.assign(actions, planActions, {
   'sign-in'() {
-    cloud.signIn().catch((e) => alert(`No se pudo iniciar sesión: ${e.message}`));
+    cloud.signIn().catch((e) => toast(`No se pudo iniciar sesión: ${e.message}`));
     return false;
   },
   account() {
@@ -1092,14 +1105,14 @@ Object.assign(actions, planActions, {
     // Los botones devuelven su value en el submit; se gestiona el cierre de sesión aparte.
     $dialog.querySelector('[value="logout"]').addEventListener('click', async (ev) => {
       ev.preventDefault();
-      if (!confirm('¿Cerrar sesión? Los datos se borrarán de este dispositivo, pero siguen guardados en tu cuenta.')) return;
-      $dialog.close();
-      clearTimeout(syncTimer);
-      await syncPush();
-      await cloud.signOutCloud();
-      state = defaultState();
-      storeLocal();
-      render();
+      ask('¿Cerrar sesión? Los datos se borrarán de este dispositivo, pero siguen guardados en tu cuenta.', 'Cerrar sesión', async () => {
+        clearTimeout(syncTimer);
+        await syncPush();
+        await cloud.signOutCloud();
+        state = defaultState();
+        storeLocal();
+        render();
+      });
     });
     return false;
   },
@@ -1119,7 +1132,7 @@ function toast(msg) {
 
 initPlan({
   state: () => state,
-  commit, save, render, openDialog, dialogButtons, esc, uid, fmtSecs, exName, fmtSet, toast,
+  commit, save, render, openDialog, dialogButtons, ask, esc, uid, fmtSecs, exName, fmtSet, toast,
   auth: { configured: cloud.cloudConfigured, user: cloud.currentUser, idToken: cloud.idToken },
 });
 

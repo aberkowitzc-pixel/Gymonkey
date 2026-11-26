@@ -1,6 +1,8 @@
 // Plan de entrenamiento con IA: formulario inicial → preguntas de seguimiento →
 // plan por mesociclos → aplicar a rutinas → editar a mano o ajustar con IA.
 
+import { DEMO_AI } from './config.js';
+
 export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const GOALS = [
   ['hipertrofia', 'Ganar músculo (hipertrofia)'],
@@ -69,6 +71,7 @@ export function weekInfo(plan) {
 /* ---------- llamadas a la IA ---------- */
 
 async function callAI(mode, input) {
+  if (DEMO_AI) return (await import('./demo.js')).demoAI(mode, input);
   const auth = ctx.auth;
   if (auth.configured && !auth.user()) throw new Error('Inicia sesión con Google para usar la IA.');
   const token = await auth.idToken();
@@ -195,7 +198,10 @@ export function viewPlan() {
   const login = ctx.auth.configured && !ctx.auth.user()
     ? `<div class="card"><p>Para crear y ajustar planes con IA y guardar tus datos en la nube, inicia sesión.</p><button class="primary block" data-action="sign-in">Iniciar sesión con Google</button></div>`
     : '';
-  if (ui.step === 'form') return err + login + formView();
+  const demo = DEMO_AI ? '<div class="card demo-note">🧪 <b>Modo demo:</b> la IA está simulada y el plan es un ejemplo. Con el servidor configurado lo genera la IA real a tu medida.</div>' : '';
+  if (ui.step === 'form') return err + demo + login + formView();
+  if (ui.step === 'questions') return err + demo + questionsView();
+  if (!S().plan && !ui.editing) return err + demo + login + introView();
   if (ui.step === 'questions') return err + questionsView();
   if (ui.editing) return err + editView();
   if (!S().plan) return err + login + introView();
@@ -473,15 +479,22 @@ export const planActions = {
   'plan-undo'() {
     const st = S();
     const [prev, ...rest] = st.plan.history || [];
-    if (!prev || !confirm('¿Volver a la versión anterior del plan?')) return false;
-    st.plan = { ...prev, startDate: st.plan.startDate, appliedMeso: st.plan.appliedMeso, history: rest, lastMessage: 'Has vuelto a la versión anterior del plan.', lastChanges: [] };
-    if (st.plan.appliedMeso != null) applyMeso(weekInfo(st.plan).meso);
+    if (!prev) return false;
+    ctx.ask('¿Volver a la versión anterior del plan?', 'Deshacer', () => {
+      st.plan = { ...prev, startDate: st.plan.startDate, appliedMeso: st.plan.appliedMeso, history: rest, lastMessage: 'Has vuelto a la versión anterior del plan.', lastChanges: [] };
+      if (st.plan.appliedMeso != null) applyMeso(weekInfo(st.plan).meso);
+      ctx.commit();
+    });
+    return false;
   },
   'plan-new'() {
-    if (!confirm('¿Crear un plan nuevo? El actual se borrará (tus rutinas y tu historial se mantienen).')) return false;
-    S().plan = null;
-    ui.step = 'form';
-    ui.error = null;
+    ctx.ask('¿Crear un plan nuevo? El actual se borrará (tus rutinas y tu historial se mantienen).', 'Crear nuevo', () => {
+      S().plan = null;
+      ui.step = 'form';
+      ui.error = null;
+      ctx.commit();
+    });
+    return false;
   },
   'plan-feedback'() {
     const plan = S().plan;
@@ -537,8 +550,11 @@ export const planActions = {
     m.days.push({ name: `Día ${m.days.length + 1}`, weekday: WEEKDAYS.find((w) => !used.includes(w)) || 'Lunes', focus: '', estimated_minutes: 0, exercises: [] });
   },
   'plan-edit-del-day'(_, el) {
-    if (!confirm('¿Eliminar este día del mesociclo?')) return false;
-    ui.editing.mesocycles[+el.dataset.m].days.splice(+el.dataset.d, 1);
+    ctx.ask('¿Eliminar este día del mesociclo?', 'Eliminar', () => {
+      ui.editing.mesocycles[+el.dataset.m].days.splice(+el.dataset.d, 1);
+      ctx.render();
+    });
+    return false;
   },
   'plan-edit-save'() {
     const p = ui.editing;
