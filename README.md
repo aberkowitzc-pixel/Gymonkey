@@ -1,9 +1,13 @@
 # Gymonkey 🏋️
 
-App web (PWA) para registrar tus entrenamientos en el gimnasio. Funciona en el móvil, se puede instalar en la pantalla de inicio y funciona sin conexión.
+App web (PWA) para registrar tus entrenamientos en el gimnasio, con un **entrenador IA** que diseña y ajusta tu plan. Funciona en el móvil, se instala en la pantalla de inicio y el registro de entrenos funciona sin conexión.
+
+👉 **Para ponerla en marcha (cuentas, IA y publicación) sigue [SETUP.md](SETUP.md).**
 
 ## Qué puedes hacer
 
+- **Plan con IA** (pestaña 🧠): cuestionario inicial (objetivo, días, tiempo, experiencia, material, lesiones) → preguntas de seguimiento de la IA → plan por **mesociclos** basado en evidencia científica (volumen, frecuencia, RIR, descansos, descargas), con las fuentes citadas. Se convierte en tus rutinas con un toque, se puede **editar a mano** y **ajustar con IA** (menos/más días, cambiar días, sesiones más cortas, molestias…), con opción de deshacer.
+- **Cuenta de Google**: inicia sesión para guardar todos tus datos en la nube y sincronizarlos entre dispositivos.
 - **Entrenar**: empieza un entreno desde una rutina o vacío, apunta peso y repeticiones de cada serie y márcala como hecha (✓). Ves lo que hiciste la última vez en cada serie.
 - **Cronómetro de serie** (▶): mide cuánto dura cualquier serie. En los ejercicios por tiempo (p. ej. plancha) avisa al llegar al objetivo y guarda los segundos.
 - **Descanso entre series**: empieza solo al terminar cada serie. Muestra cuánto llevas y cuánto queda, se puede alargar o acortar (±15 s) y avisa con sonido, vibración y notificación. Descanso por defecto en ⚙️ Ajustes y descanso propio por ejercicio con el botón ⏱.
@@ -13,27 +17,17 @@ App web (PWA) para registrar tus entrenamientos en el gimnasio. Funciona en el m
 - **Progreso**: gráfica del 1RM estimado (fórmula de Epley), peso máximo y evolución por ejercicio.
 - **Copia de seguridad**: exporta e importa tus datos en JSON (pestaña Rutinas → Datos).
 
-Los datos se guardan solo en tu dispositivo (`localStorage`); no hay servidor ni cuenta.
-
-## Publicarla en GitHub Pages
-
-1. El repositorio debe ser **público** (GitHub Pages en repositorios privados requiere un plan de pago).
-2. En GitHub: **Settings → Pages → Build and deployment → Source: “Deploy from a branch”**.
-3. Elige la rama con la app y la carpeta **/ (root)** y pulsa **Save**.
-4. En uno o dos minutos estará en `https://<tu-usuario>.github.io/Gymonkey/`.
-5. En el móvil, abre esa dirección y:
-   - **Android (Chrome)**: menú ⋮ → *Instalar app* / *Añadir a pantalla de inicio*.
-   - **iPhone (Safari)**: botón Compartir → *Añadir a pantalla de inicio*.
+Sin iniciar sesión, los datos se guardan solo en el dispositivo. Con sesión iniciada se guardan también en tu cuenta (Firebase Firestore).
 
 ## Probarla en local
 
-No necesita instalación ni compilación. Desde la carpeta del proyecto:
-
 ```bash
-python3 -m http.server 8000
+npm install
+npx vercel dev      # web + servidor de IA (necesita las variables de entorno de SETUP.md)
+npm test            # pruebas del servidor de IA (no llaman a la API)
 ```
 
-y abre http://localhost:8000. Para instalarla en el móvil, publícala con HTTPS (por ejemplo, GitHub Pages) y usa “Añadir a pantalla de inicio”.
+Solo la parte sin IA: `python3 -m http.server 8000` y abre http://localhost:8000.
 
 ## Archivos
 
@@ -41,6 +35,11 @@ y abre http://localhost:8000. Para instalarla en el móvil, publícala con HTTPS
 |---|---|
 | `index.html` | Estructura de la página y barra de pestañas |
 | `styles.css` | Estilos (modo claro y oscuro automático) |
-| `app.js` | Toda la lógica: datos, vistas y acciones |
+| `app.js` | Lógica principal: datos, vistas, temporizadores y sincronización |
+| `plan.js` | Plan con IA: cuestionario, mesociclos, edición y ajustes |
+| `cloud.js`, `config.js` | Inicio de sesión con Google y guardado en Firestore |
+| `api/plan.js`, `lib/` | Servidor (Vercel): verifica al usuario y llama a Claude |
+| `firestore.rules` | Reglas de seguridad: cada persona solo ve sus datos |
+| `vendor/firebase.js` | SDK de Firebase empaquetado (`npm run build:firebase`) |
 | `sw.js` | Service worker: funciona sin conexión y gestiona las notificaciones |
 | `manifest.webmanifest`, `icon*.svg/png` | Datos e iconos para instalarla como app |

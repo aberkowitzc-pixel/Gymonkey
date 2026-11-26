@@ -1,6 +1,6 @@
 // Service worker: cachea los archivos de la app para que funcione sin conexión.
-const CACHE = 'gymonkey-v2';
-const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'icon.svg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+const CACHE = 'gymonkey-v3';
+const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'plan.js', 'cloud.js', 'config.js', 'icon.svg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
@@ -17,6 +17,9 @@ self.addEventListener('activate', (e) => {
 // Red primero, caché como respaldo: así siempre se usa la última versión si hay conexión.
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // Solo archivos de la propia app: nunca la IA (/api) ni Google/Firebase.
+  const url = new URL(e.request.url);
+  if (url.origin !== self.location.origin || url.pathname.includes('/api/')) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {

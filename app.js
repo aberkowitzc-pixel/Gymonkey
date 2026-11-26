@@ -1,9 +1,11 @@
-'use strict';
-
 /* ============================================================
  * Gymonkey — registro de entrenamientos (PWA, sin dependencias)
- * Los datos se guardan en localStorage del dispositivo.
+ * Los datos se guardan en el dispositivo (localStorage) y, si
+ * inicias sesión con Google, también en tu cuenta (Firestore).
  * ============================================================ */
+
+import * as cloud from './cloud.js';
+import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, planTick, planTrainBanner, todayName, WEEKDAYS } from './plan.js';
 
 const STORAGE_KEY = 'gymonkey:v1';
 const REST_OPTIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 240, 300];
@@ -46,6 +48,9 @@ function defaultState() {
     ],
     workouts: [],
     active: null,
+    profile: null,
+    plan: null,
+    meta: { deletedWorkouts: [] },
   };
 }
 
@@ -54,6 +59,9 @@ function migrate(s) {
   s.settings = { ...DEFAULT_SETTINGS, ...(s.settings || {}) };
   s.exercises.forEach((e) => { if (!e.type) e.type = e.name === 'Plancha' ? 'time' : 'reps'; });
   if (s.active && s.active.timer === undefined) s.active.timer = null;
+  s.profile ??= null;
+  s.plan ??= null;
+  s.meta = { deletedWorkouts: [], ...(s.meta || {}) };
   return s;
 }
 
@@ -69,8 +77,14 @@ let state = load();
 let tab = 'train';
 let progressExerciseId = null;
 
-function save() {
+function storeLocal() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) { /* ignorar */ }
+}
+
+function save() {
+  state.meta.updatedAt = Date.now();
+  storeLocal();
+  scheduleSync();
 }
 
 /* ---------- utilidades ---------- */
@@ -96,6 +110,8 @@ const fmtSecs = (s) => fmtDuration(s * 1000);
 // 1RM estimado (fórmula de Epley)
 const oneRM = (w, r) => (r > 0 ? w * (1 + r / 30) : 0);
 const restFor = (exerciseId) => exById(exerciseId)?.rest ?? state.settings.rest;
+/** Descanso de un ejercicio dentro del entreno: el elegido hoy, el del plan, el del ejercicio o el general. */
+const restForEntry = (entry) => entry.rest ?? entry.target?.rest ?? restFor(entry.exerciseId);
 
 function fmtSet(exerciseId, s) {
   if (isTimed(exerciseId)) return (num(s.w) ? `${fmtKg(num(s.w))} kg · ` : '') + fmtSecs(num(s.r));
@@ -121,12 +137,15 @@ function lastSetsFor(exerciseId) {
   return [];
 }
 
-function newEntry(exerciseId) {
+function newEntry(exerciseId, target) {
   const prev = lastSetsFor(exerciseId);
-  const sets = prev.length
-    ? prev.map((s) => ({ w: s.w, r: s.r, done: false }))
-    : [{ w: '', r: '', done: false }, { w: '', r: '', done: false }, { w: '', r: '', done: false }];
-  return { exerciseId, sets };
+  const count = target?.sets || prev.length || 3;
+  // Se rellenan los pesos de la última vez; las repeticiones del plan van como sugerencia.
+  const sets = Array.from({ length: count }, (_, i) => {
+    const p = prev[i] || prev[prev.length - 1];
+    return { w: p?.w ?? '', r: target ? '' : (p?.r ?? ''), done: false };
+  });
+  return target ? { exerciseId, sets, target } : { exerciseId, sets };
 }
 
 function restOptions(selected) {
@@ -159,7 +178,7 @@ function timerInfo() {
 
 function startRest(e) {
   const a = state.active;
-  a.timer = { kind: 'rest', e, start: Date.now(), duration: restFor(a.entries[e].exerciseId) * 1000, alerted: false };
+  a.timer = { kind: 'rest', e, start: Date.now(), duration: restForEntry(a.entries[e]) * 1000, alerted: false };
   startMedia();
 }
 
@@ -398,13 +417,15 @@ function tick() {
   }
   renderBanner(info);
   updateMedia(info);
+  planTick();
 }
 
 /* ---------- vistas ---------- */
 
 function render() {
   document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-  const views = { train: viewTrain, routines: viewRoutines, history: viewHistory, progress: viewProgress };
+  const views = { train: viewTrain, plan: viewPlan, routines: viewRoutines, history: viewHistory, progress: viewProgress };
+  renderAccount();
   $view.innerHTML = views[tab]();
   bannerKind = null;
   document.getElementById('banner')?.remove();
@@ -415,14 +436,17 @@ function render() {
 function viewTrain() {
   const a = state.active;
   if (!a) {
-    const routines = state.routines.map((r) => `
-      <button class="card block" style="text-align:left" data-action="start" data-id="${r.id}">
-        <div class="row between"><h3>${esc(r.name)}</h3><span class="pill">${r.exerciseIds.length} ejercicios</span></div>
+    const today = todayName();
+    const order = (r) => (r.fromPlan ? WEEKDAYS.indexOf(r.weekday) : 99);
+    const routines = [...state.routines].sort((x, y) => order(x) - order(y)).map((r) => `
+      <button class="card block ${r.fromPlan && r.weekday === today ? 'today' : ''}" style="text-align:left" data-action="start" data-id="${r.id}">
+        <div class="row between"><h3>${esc(r.name)}</h3><span class="pill">${r.fromPlan ? (r.weekday === today ? 'Hoy · ' : '') + esc(r.weekday) : `${r.exerciseIds.length} ejercicios`}</span></div>
         <div class="muted" style="margin-top:4px">${r.exerciseIds.map((id) => esc(exName(id))).join(' · ') || 'Sin ejercicios'}</div>
       </button>`).join('');
     const weekAgo = Date.now() - 7 * 864e5;
     const thisWeek = state.workouts.filter((w) => w.start >= weekAgo).length;
     return `
+      ${planTrainBanner()}
       <div class="stats">
         <div class="card stat"><b>${thisWeek}</b><span class="muted">esta semana</span></div>
         <div class="card stat"><b>${state.workouts.length}</b><span class="muted">entrenos</span></div>
@@ -430,7 +454,7 @@ function viewTrain() {
       </div>
       <button class="primary block" data-action="start">+ Entreno vacío</button>
       <h2 style="margin-top:20px">Empezar desde una rutina</h2>
-      ${routines || '<p class="muted">Crea una rutina en la pestaña Rutinas.</p>'}`;
+      ${routines || '<p class="muted">Crea una rutina en la pestaña Rutinas o genera un plan con IA en la pestaña Plan.</p>'}`;
   }
 
   const t = a.timer;
@@ -444,22 +468,24 @@ function viewTrain() {
         <td>${si + 1}</td>
         <td class="prev">${prev[si] ? fmtSet(e.exerciseId, prev[si]) : '—'}</td>
         <td><input inputmode="decimal" placeholder="kg" value="${esc(s.w)}" data-field="w" data-e="${ei}" data-s="${si}" aria-label="Peso serie ${si + 1}"></td>
-        <td><input inputmode="numeric" placeholder="${timed ? 'seg' : 'reps'}" value="${esc(s.r)}" data-field="r" data-e="${ei}" data-s="${si}" aria-label="${timed ? 'Segundos' : 'Repeticiones'} serie ${si + 1}"></td>
+        <td><input inputmode="numeric" placeholder="${e.target ? esc(e.target.reps) : timed ? 'seg' : 'reps'}" value="${esc(s.r)}" data-field="r" data-e="${ei}" data-s="${si}" aria-label="${timed ? 'Segundos' : 'Repeticiones'} serie ${si + 1}"></td>
         <td class="btns">
           <button class="icon play" data-action="${running ? 'finish-set' : 'start-set'}" data-e="${ei}" data-s="${si}" aria-label="${running ? 'Terminar' : 'Cronometrar'} serie ${si + 1}">${running ? '■' : '▶'}</button>
           <button class="icon check" data-action="toggle-set" data-e="${ei}" data-s="${si}" aria-label="Completar serie ${si + 1}">✓</button>
         </td>
       </tr>`;
     }).join('');
+    const tg = e.target;
     return `
       <div class="card">
         <div class="row between">
           <h3>${esc(exName(e.exerciseId))}</h3>
           <div class="row">
-            <button class="ghost small" data-action="set-rest" data-e="${ei}" aria-label="Cambiar descanso">⏱ ${fmtSecs(restFor(e.exerciseId))}</button>
+            <button class="ghost small" data-action="set-rest" data-e="${ei}" aria-label="Cambiar descanso">⏱ ${fmtSecs(restForEntry(e))}</button>
             <button class="ghost danger" data-action="remove-entry" data-e="${ei}" aria-label="Quitar ejercicio">✕</button>
           </div>
         </div>
+        ${tg ? `<div class="target">🎯 ${tg.sets}×${esc(tg.reps)}${timed ? ' s' : ''} · RIR ${esc(tg.rir)}${tg.notes ? `<small>${esc(tg.notes)}</small>` : ''}</div>` : ''}
         <table class="sets">
           <thead><tr><th>#</th><th>Anterior</th><th>Kg</th><th>${timed ? 'Seg' : 'Reps'}</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
@@ -618,7 +644,7 @@ function openDialog(html, onSubmit) {
   const form = $dialog.querySelector('form');
   form.addEventListener('submit', (ev) => {
     if (ev.submitter?.value === 'cancel') return;
-    onSubmit(new FormData(form), form);
+    onSubmit(new FormData(form), form, ev.submitter?.value);
   });
   $dialog.showModal();
 }
@@ -685,7 +711,7 @@ const actions = {
     state.active = {
       name: r ? r.name : 'Entreno libre',
       start: Date.now(),
-      entries: r ? r.exerciseIds.filter(exById).map(newEntry) : [],
+      entries: r ? r.exerciseIds.filter(exById).map((exId) => newEntry(exId, r.targets?.[exId])) : [],
       timer: null,
     };
   },
@@ -751,7 +777,8 @@ const actions = {
     clearNotes();
   },
   'set-rest'(_, el) {
-    const ex = exById(state.active.entries[+el.dataset.e].exerciseId);
+    const entry = state.active.entries[+el.dataset.e];
+    const ex = exById(entry.exerciseId);
     if (!ex) return false;
     openDialog(`
       <h2>Descanso · ${esc(ex.name)}</h2>
@@ -763,6 +790,7 @@ const actions = {
       ${dialogButtons('Guardar')}`,
     (fd) => {
       ex.rest = fd.get('rest') ? +fd.get('rest') : undefined;
+      entry.rest = ex.rest;
       commit();
     });
     return false;
@@ -861,6 +889,7 @@ const actions = {
   'delete-workout'(id) {
     if (!confirm('¿Borrar este entreno del historial?')) return false;
     state.workouts = state.workouts.filter((w) => w.id !== id);
+    state.meta.deletedWorkouts = [...state.meta.deletedWorkouts, id].slice(-500);
   },
   export() {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -908,9 +937,17 @@ document.addEventListener('click', (ev) => {
 // El audio del móvil solo se puede activar tras un toque del usuario.
 document.addEventListener('pointerdown', () => audioCtx(), { passive: true });
 
+document.addEventListener('submit', (ev) => {
+  const form = ev.target;
+  if (!form.dataset.form) return;
+  ev.preventDefault();
+  onPlanSubmit(form);
+});
+
 // Escribir en los campos de peso/reps sin volver a pintar toda la vista (mantiene el foco).
 document.addEventListener('input', (ev) => {
   const el = ev.target;
+  if (el.dataset.edit) { onPlanInput(el); return; }
   if (!el.dataset.field || !state.active) return;
   state.active.entries[+el.dataset.e].sets[+el.dataset.s][el.dataset.field] = el.value;
   save();
@@ -936,8 +973,161 @@ document.addEventListener('visibilitychange', () => {
   } else {
     clearNotes();
     tick();
+    if (cloud.currentUser() && Date.now() - lastPull > 60_000) syncPull();
   }
 });
+
+/* ============================================================
+ * Cuenta de Google y sincronización
+ * ============================================================ */
+
+let syncTimer = null;
+let syncStatus = 'idle'; // idle | saving | ok | error
+let lastPull = 0;
+
+function setSyncStatus(s) { syncStatus = s; renderAccount(); }
+
+function scheduleSync() {
+  if (!cloud.currentUser()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncPush, 1500);
+}
+
+async function syncPush() {
+  if (!cloud.currentUser()) return;
+  setSyncStatus('saving');
+  try { await cloud.pushState(state); setSyncStatus('ok'); } catch (e) { console.error(e); setSyncStatus('error'); }
+}
+
+const byId = (...lists) => {
+  const m = new Map();
+  lists.forEach((l) => (l || []).forEach((x) => m.set(x.id, x)));
+  return [...m.values()];
+};
+
+/** Une los datos del dispositivo con los de la cuenta. */
+function mergeStates(local, remote, uid) {
+  const main = remote.main;
+  const tomb = new Set([...(local.meta.deletedWorkouts || []), ...(main.meta?.deletedWorkouts || [])]);
+  const workouts = byId(local.workouts, remote.workouts).filter((w) => !tomb.has(w.id)).sort((a, b) => a.start - b.start);
+  let base;
+  if (local.meta.uid === uid) {
+    // Mismo usuario en este dispositivo: gana la versión modificada más recientemente.
+    base = (local.meta.updatedAt || 0) > (main.meta?.updatedAt || 0) ? local : main;
+  } else {
+    // Primera vez en este dispositivo: se suma lo local a lo de la cuenta sin perder nada.
+    base = {
+      ...main,
+      exercises: byId(local.exercises, main.exercises),
+      routines: byId(local.routines, main.routines),
+      plan: main.plan || local.plan,
+      profile: main.profile || local.profile,
+      active: main.active || local.active,
+    };
+  }
+  return migrate({
+    ...defaultState(), ...base, workouts,
+    meta: { ...(base.meta || {}), uid, deletedWorkouts: [...tomb].slice(-500), updatedAt: Math.max(local.meta.updatedAt || 0, main.meta?.updatedAt || 0) },
+  });
+}
+
+async function syncPull() {
+  const u = cloud.currentUser();
+  if (!u) return;
+  lastPull = Date.now();
+  setSyncStatus('saving');
+  try {
+    const remote = await cloud.pullRemote();
+    if (!remote.main) {
+      state.meta.uid = u.uid;
+      storeLocal();
+      await cloud.pushState(state);
+    } else {
+      const before = JSON.stringify(state);
+      state = mergeStates(state, remote, u.uid);
+      storeLocal();
+      if (JSON.stringify(state) !== before && !document.querySelector('dialog[open]')) render();
+      await cloud.pushState(state);
+    }
+    setSyncStatus('ok');
+  } catch (e) {
+    console.error(e);
+    setSyncStatus('error');
+  }
+}
+
+function renderAccount() {
+  const el = document.getElementById('account');
+  if (!el) return;
+  if (!cloud.cloudConfigured) { el.innerHTML = ''; return; }
+  const u = cloud.currentUser();
+  if (!u) { el.innerHTML = '<button class="small" data-action="sign-in">Entrar</button>'; return; }
+  const dot = { saving: 'saving', ok: 'ok', error: 'error' }[syncStatus] || '';
+  const initial = esc((u.displayName || u.email || '?').trim()[0].toUpperCase());
+  el.innerHTML = `<button class="avatar ${dot}" data-action="account" aria-label="Tu cuenta">
+    ${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">` : initial}</button>`;
+}
+
+Object.assign(actions, planActions, {
+  'sign-in'() {
+    cloud.signIn().catch((e) => alert(`No se pudo iniciar sesión: ${e.message}`));
+    return false;
+  },
+  account() {
+    const u = cloud.currentUser();
+    const statusText = { saving: 'Sincronizando…', ok: 'Todo guardado en tu cuenta ✓', error: 'No se pudo sincronizar (se reintentará)', idle: '' }[syncStatus];
+    openDialog(`
+      <h2>Tu cuenta</h2>
+      <p><b>${esc(u.displayName || '')}</b><br><span class="muted">${esc(u.email || '')}</span></p>
+      <p class="muted">${statusText}</p>
+      <p class="muted">Tus entrenos, rutinas, plan y ajustes se guardan en tu cuenta y se sincronizan entre tus dispositivos.</p>
+      <div class="row" style="margin-top:14px">
+        <button class="block" value="sync">Sincronizar ahora</button>
+        <button class="block danger" value="logout">Cerrar sesión</button>
+      </div>
+      <button class="block ghost" value="cancel" style="margin-top:8px">Cerrar</button>`,
+    async (_, __, value) => {
+      if (value === 'sync') { await syncPush(); await syncPull(); }
+    });
+    // Los botones devuelven su value en el submit; se gestiona el cierre de sesión aparte.
+    $dialog.querySelector('[value="logout"]').addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      if (!confirm('¿Cerrar sesión? Los datos se borrarán de este dispositivo, pero siguen guardados en tu cuenta.')) return;
+      $dialog.close();
+      clearTimeout(syncTimer);
+      await syncPush();
+      await cloud.signOutCloud();
+      state = defaultState();
+      storeLocal();
+      render();
+    });
+    return false;
+  },
+});
+
+/* ---------- avisos breves ---------- */
+
+let toastTimer = null;
+function toast(msg) {
+  let el = document.getElementById('toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+initPlan({
+  state: () => state,
+  commit, save, render, openDialog, dialogButtons, esc, uid, fmtSecs, exName, fmtSet, toast,
+  auth: { configured: cloud.cloudConfigured, user: cloud.currentUser, idToken: cloud.idToken },
+});
+
+cloud.initCloud((u) => {
+  renderAccount();
+  if (u) syncPull();
+  if (tab === 'plan') render();
+}).catch((e) => console.error('No se pudo iniciar Firebase', e));
 
 render();
 setInterval(tick, 1000);

@@ -1,0 +1,17 @@
+{
+  "name": "gymonkey",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:firebase": "esbuild src/firebase-entry.js --bundle --format=esm --minify --outfile=vendor/firebase.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.14.0",
+    "jose": "^6.2.18"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "firebase": "^13.4.0"
+  }
+}

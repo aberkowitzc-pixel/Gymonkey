@@ -17,6 +17,7 @@
   <header class="topbar">
     <img src="icon.svg" alt="" class="logo">
     <h1>Gymonkey</h1>
+    <div id="account"></div>
     <button class="ghost gear" data-action="settings" aria-label="Ajustes">⚙️</button>
   </header>
 
@@ -24,6 +25,7 @@
 
   <nav class="tabbar" aria-label="Secciones">
     <button data-tab="train" class="active"><span>🏋️</span>Entrenar</button>
+    <button data-tab="plan"><span>🧠</span>Plan</button>
     <button data-tab="routines"><span>📋</span>Rutinas</button>
     <button data-tab="history"><span>🗓️</span>Historial</button>
     <button data-tab="progress"><span>📈</span>Progreso</button>
@@ -31,6 +33,6 @@
 
   <dialog id="dialog"></dialog>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
