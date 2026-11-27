@@ -68,6 +68,6 @@ En iPhone: Safari → Compartir → *Añadir a pantalla de inicio*.
 
 ### Opcional
 
-- **Modelo de IA**: por defecto usa *Claude Opus 5.5*. Puedes cambiarlo con la variable `CLAUDE_MODEL` en Vercel (por ejemplo `claude-sonnet-5-5`, que cuesta la mitad) y volver a desplegar.
+- **Modelos de IA**: para gastar menos, el *plan nuevo* usa *Claude Sonnet 5.5* y todo lo demás (chat, preguntas, ajustes, dictado, cargas, revisión semanal) usa *Claude Haiku 5.5*. Se cambian con variables en Vercel y un nuevo despliegue: `CLAUDE_MODEL_PLAN` (plan nuevo), `CLAUDE_MODEL_FAST` (el resto) o `CLAUDE_MODEL` (fuerza el mismo modelo en todo, por ejemplo `claude-opus-5-5` si quieres máxima calidad). El consumo de cada llamada queda en los logs de Vercel con la etiqueta `ai-usage`.
 - **Uso comercial**: el plan gratuito de Vercel es para proyectos personales. Si vas a cobrar por la app, necesitas Vercel Pro.
 - **Regenerar el paquete de Firebase** (solo para desarrolladores): `npm install && npm run build:firebase`.

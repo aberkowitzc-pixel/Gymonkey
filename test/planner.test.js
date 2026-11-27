@@ -22,7 +22,7 @@ test('el SDK envía modelo, esquema JSON, effort y fallbacks correctos', async (
   server.close();
   const { body, headers, url } = captured;
   assert.match(url, /^\/v1\/messages/);
-  assert.equal(body.model, 'claude-opus-5-5');
+  assert.equal(body.model, 'claude-sonnet-5-5');
   assert.equal(body.stream, true);
   assert.equal(body.fallbacks, 'default');
   assert.match(headers['anthropic-beta'], /server-side-fallback-2026-07-01/);
@@ -301,4 +301,16 @@ test('chat: responde y decide si hay que cambiar el plan; sin mensaje de la pers
   assert.match(seen.system, /Saludos y charla ligera/);
   assert.match(seen.system, /UNA pregunta/);
   await assert.rejects(runPlanner(client, 'chat', { chat: [{ role: 'coach', text: 'Hola' }] }), PlannerError);
+});
+
+test('un modelo por tarea: Sonnet para el plan nuevo, Haiku (sin respaldo) para el resto', async () => {
+  const seen = [];
+  const client = { beta: { messages: { stream: (params) => { seen.push(params); return { on() { return this; }, async finalMessage() { return { stop_reason: 'end_turn', parsed_output: { message: 'ok', action: 'none', instruction: '' }, model: params.model, usage: {} }; } }; } } } };
+  await runPlanner(client, 'chat', { chat: [{ role: 'user', text: 'hola' }] });
+  assert.equal(seen[0].model, 'claude-haiku-5-5');
+  assert.equal(seen[0].fallbacks, undefined);
+  const gen = { beta: { messages: { stream: (params) => { seen.push(params); return { on() { return this; }, async finalMessage() { return { stop_reason: 'end_turn', parsed_output: { plan: {} }, model: params.model, usage: {} }; } }; } } } };
+  await runPlanner(gen, 'generate', { profile });
+  assert.equal(seen[1].model, 'claude-sonnet-5-5');
+  assert.equal(seen[1].fallbacks, 'default');
 });
