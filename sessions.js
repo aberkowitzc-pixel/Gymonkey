@@ -6,6 +6,7 @@ import { MAX_DOC } from './context.js';
 import { matchExercise, addAlias, norm } from './exercises.js';
 import { guessRoutine } from './calendar.js';
 import { t, tn, fmtNum, getLang, exLabel, canonicalExercise } from './i18n.js';
+import { ic } from './icons.js';
 
 let ctx;
 export function initSessions(c) { ctx = c; }
@@ -57,7 +58,7 @@ let rec = null;
 
 function micUI() {
   const b = document.getElementById('sv-mic');
-  if (b) b.textContent = sv.listening ? `⏹ ${t('Parar')}` : `🎙️ ${t('Dictar')}`;
+  if (b) b.textContent = sv.listening ? `${ic('stop')} ${t('Parar')}` : `${ic('mic')} ${t('Dictar')}`;
   const st = document.getElementById('sv-status');
   if (st && !sv.listening) st.textContent = '';
 }
@@ -175,7 +176,7 @@ const isDup = (s) => !!s.date && existingSigs().has(draftSig(s));
 export function viewSessions() {
   if (sv.loading) return loadingView();
   const err = sv.error
-    ? `<div class="card error" role="alert"><p style="margin:0 0 8px">⚠️ ${esc(sv.error)}</p>${sv.lastRun ? `<button class="primary" data-action="sv-retry">${t('Reintentar')}</button>` : ''}</div>`
+    ? `<div class="card error" role="alert"><p style="margin:0 0 8px">${ic('alert')} ${esc(sv.error)}</p>${sv.lastRun ? `<button class="primary" data-action="sv-retry">${t('Reintentar')}</button>` : ''}</div>`
     : '';
   return err + (sv.step === 'review' ? reviewView() : inputView());
 }
@@ -185,8 +186,9 @@ function loadingView() {
   return `<div class="card ai-loading" role="status">
     <h3>${esc(l.text)}</h3>
     <div class="progress" aria-hidden="true"><i id="sv-bar" style="width:${Math.round(l.shown)}%"></i></div>
+      <div class="skel" aria-hidden="true"><i></i><i></i><i></i></div>
     <div class="row between"><span id="sv-phase" class="phase">${esc(l.phase)}</span><b id="sv-pct" class="timer">${Math.round(l.shown)} %</b></div>
-    <div class="row between small-line muted"><span>⏱ <b id="sv-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
+    <div class="row between small-line muted"><span>${ic('clock')} <b id="sv-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
     <button class="ghost block" style="margin-top:8px" data-action="sv-cancel-ai">${t('Cancelar')}</button>
   </div>`;
 }
@@ -201,10 +203,10 @@ function inputView() {
       : t('Cuéntame qué hiciste: ejercicios, pesos y series.');
   const tools = imp
     ? `<div class="row wrap">
-        <label class="file-btn"><input type="file" data-sv-file accept=".md,.markdown,.txt,.csv,.json,text/*"><span>📄 ${t('Subir archivo')}</span></label>
-        <button type="button" class="small" data-action="ctx-copy-prompt">📋 ${t('Copiar prompt para otra IA')}</button>
+        <label class="file-btn"><input type="file" data-sv-file accept=".md,.markdown,.txt,.csv,.json,text/*"><span>${ic('file')} ${t('Subir archivo')}</span></label>
+        <button type="button" class="small" data-action="ctx-copy-prompt">${ic('clipboard')} ${t('Copiar prompt para otra IA')}</button>
       </div>`
-    : `<div class="row"><button class="primary" id="sv-mic" data-action="sv-mic">${sv.listening ? `⏹ ${t('Parar')}` : `🎙️ ${t('Dictar')}`}</button><span class="muted" id="sv-status"></span></div>
+    : `<div class="row"><button class="primary" id="sv-mic" data-action="sv-mic">${sv.listening ? `${ic('stop')} ${t('Parar')}` : `${ic('mic')} ${t('Dictar')}`}</button><span class="muted" id="sv-status"></span></div>
        <p class="muted" style="margin:0;font-size:0.78rem">${SR ? t('Chrome envía el audio a Google para transcribirlo.') : t('Usa el micrófono de tu teclado.')}</p>`;
   return `
     <div class="card stack">
@@ -232,7 +234,7 @@ function reviewView() {
         <summary>
           <label class="sess-head">${sv.target === 'edit' ? '' : `<input type="checkbox" data-sv-inc="${i}" ${sv.include[i] ? 'checked' : ''}>`}
             <span><b>${esc(s.date || t('Sin fecha'))}</b> · ${esc(s.name || t('Entreno'))}<br><small class="muted">${tn(s.entries.length, '{n} ejercicio', '{n} ejercicios')} · ${tn(sets, '{n} serie', '{n} series')}</small></span></label>
-          ${dup ? `<span class="pill">${t('ya en tu historial')}</span>` : ''}${inc ? `<span class="pill warn">⚠️ ${inc}</span>` : ''}
+          ${dup ? `<span class="pill">${t('ya en tu historial')}</span>` : ''}${inc ? `<span class="pill warn">${ic('alert')} ${inc}</span>` : ''}
         </summary>
         <div class="grid2" style="margin-top:8px">
           <label class="field">${t('Fecha')}<input type="date" data-sv="s.${i}.date" value="${esc(validISO(s.date) ? s.date : '')}"></label>
@@ -240,14 +242,14 @@ function reviewView() {
         </div>
         ${s.entries.map((e, j) => `
           <div class="svent">
-            <div class="row between"><button class="ghost link" data-action="sv-link" data-i="${i}" data-j="${j}" aria-label="${t('Cambiar el ejercicio vinculado')}"><b>${esc(exLabel(e.exercise))}</b>${linkPill(e)}</button><span class="row">${e.block ? `<span class="pill">🔗 ${esc(e.block)}</span>` : ''}<button class="ghost danger small" data-action="sv-del-entry" data-i="${i}" data-j="${j}" aria-label="${t('Quitar ejercicio')}">✕</button></span></div>
+            <div class="row between"><button class="ghost link" data-action="sv-link" data-i="${i}" data-j="${j}" aria-label="${t('Cambiar el ejercicio vinculado')}"><b>${esc(exLabel(e.exercise))}</b>${linkPill(e)}</button><span class="row">${e.block ? `<span class="pill">${ic('link')} ${esc(e.block)}</span>` : ''}<button class="ghost danger small" data-action="sv-del-entry" data-i="${i}" data-j="${j}" aria-label="${t('Quitar ejercicio')}">✕</button></span></div>
             <table class="sets"><thead><tr><th>#</th><th>${t('Kg')}</th><th>${e.type === 'time' ? t('Seg') : t('Reps')}</th><th></th></tr></thead><tbody>
               ${e.sets.map((u, k) => `
                 <tr class="${u.complete ? '' : 'warn'}">
                   <td>${k + 1}</td>
                   <td><input inputmode="decimal" dir="ltr" data-sv="t.${i}.${j}.${k}.weight_kg" value="${u.weight_kg ? esc(u.weight_kg) : ''}" placeholder="${e.type === 'time' ? '' : t('kg')}" aria-label="${t('Peso serie {n}', { n: k + 1 })}"></td>
                   <td><input inputmode="numeric" dir="ltr" data-sv="t.${i}.${j}.${k}.reps" value="${u.reps ? esc(u.reps) : ''}" placeholder="${e.type === 'time' ? t('seg') : t('reps')}" aria-label="${e.type === 'time' ? t('Segundos serie {n}', { n: k + 1 }) : t('Repeticiones serie {n}', { n: k + 1 })}"></td>
-                  <td>${u.complete ? '' : '⚠️'}<button class="ghost danger small" data-action="sv-del-set" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="${t('Quitar serie')}">✕</button></td>
+                  <td>${u.complete ? '' : ic('alert')}<button class="ghost danger small" data-action="sv-del-set" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="${t('Quitar serie')}">✕</button></td>
                 </tr>`).join('')}
             </tbody></table>
             <button class="ghost small" data-action="sv-add-set" data-i="${i}" data-j="${j}">+ ${t('Serie')}</button>
@@ -270,11 +272,11 @@ function reviewView() {
 
   const n = sv.include.filter(Boolean).length;
   return `
-    <div class="card"><p style="margin:0">💬 ${esc(sv.message || t('Esto es lo que he entendido:'))}</p></div>
+    <div class="card"><p style="margin:0">${ic('coach')} ${esc(sv.message || t('Esto es lo que he entendido:'))}</p></div>
     ${questions}
     ${sessions || `<div class="empty">${t('No encontré sesiones en el texto.')}</div>`}
     <button class="primary block" data-action="sv-save" ${n ? '' : 'disabled'}>${sv.target === 'edit' ? t('Guardar cambios') : sv.target === 'active' ? t('Añadir a mi entreno') : tn(n, 'Guardar {n} sesión', 'Guardar {n} sesiones')}</button>
-    ${sv.target === 'edit' ? '' : `<button class="block" style="margin-top:8px" data-action="sv-back">✏️ ${t('Editar el texto')}</button>`}
+    ${sv.target === 'edit' ? '' : `<button class="block" style="margin-top:8px" data-action="sv-back">${ic('edit')} ${t('Editar el texto')}</button>`}
     <button class="ghost block" data-action="sv-cancel">${t('Cancelar')}</button>`;
 }
 
@@ -522,7 +524,7 @@ export const sessionsActions = {
     ctx.openDialog(`
       <h2>${t('Vincular «{name}»', { name: esc(exLabel(e.exercise)) })}</h2>
       <div class="pick-list">
-        <label><input type="radio" name="link" value="" ${cur.ex ? '' : 'checked'}> ➕ ${t('Crear como ejercicio nuevo')}</label>
+        <label><input type="radio" name="link" value="" ${cur.ex ? '' : 'checked'}> ${ic('plus')} ${t('Crear como ejercicio nuevo')}</label>
         ${list.map((x) => `<label><input type="radio" name="link" value="${x.id}" ${cur.ex?.id === x.id ? 'checked' : ''}> ${esc(exLabel(x.name))} <span class="muted">· ${esc(t(x.muscle))}</span></label>`).join('')}
       </div>
       ${ctx.dialogButtons(t('Vincular'))}`,

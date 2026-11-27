@@ -13,11 +13,12 @@ import { buildWeekContext, hasDeficit, moveOptions, setMove, adjustmentsFor, pru
 import { initWeek, viewWeek, weekActive, weekBusy, weekTick, weekLeave, weekActions, onWeekChange } from './week.js';
 import { matchExercise, mergeExercises, findDuplicates } from './exercises.js';
 import { t, tn, T, E, tData, getLang, setLang, LANGS, detectLang, fmtNum, fwd, dayShort, dayLetter, exLabel, canonicalExercise, fmtDateShort, fmtTime, isRTL, locale } from './i18n.js';
+import { ic } from './icons.js';
 import { initSessions, viewSessions, sessionsActive, sessionsBusy, sessionsTick, sessionsLeave, sessionsActions, onSessionsInput, onSessionsChange, onSessionsFile } from './sessions.js';
 
 const STORAGE_KEY = 'gymonkey:v1';
 const REST_OPTIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 240, 300];
-const DEFAULT_SETTINGS = { rest: 90, lockscreen: true, notify: false, sound: true, wakeLock: true };
+const DEFAULT_SETTINGS = { rest: 90, lockscreen: true, notify: false, sound: true, wakeLock: true, theme: 'system' };
 const NOTE_TAG = 'gymonkey-timer';
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -559,7 +560,7 @@ const kindLabel = (k) => ({ up: t('↑ sube'), hold: t('= mantén'), down: t('�
 /** Objetivo del plan en una línea; las notas de técnica solo aparecen al tocar. */
 function targetHTML(tg, timed) {
   if (!tg) return '';
-  const line = `🎯 <span dir="ltr">${tg.sets}×${esc(tg.reps)}${timed ? ' s' : ''}</span> · RIR ${esc(tg.rir)}${tg.deload ? ` · ${t('descarga')}` : ''}`;
+  const line = `${ic('target')} <span dir="ltr">${tg.sets}×${esc(tg.reps)}${timed ? ' s' : ''}</span> · RIR ${esc(tg.rir)}${tg.deload ? ` · ${t('descarga')}` : ''}`;
   return tg.notes
     ? `<details class="target tip"><summary>${line}</summary><small>${esc(tg.notes)}</small></details>`
     : `<div class="target">${line}</div>`;
@@ -578,8 +579,11 @@ function suggestHTML(sg, exerciseId) {
   const main = sg.weight != null ? `${fmtKg(sg.weight)} ${t('kg')} × ${suggestedReps(sg, 0)}`
     : sg.kind === 'calibrate' ? t('Calibra el peso') : sg.kind === 'bodyweight' ? `${t('Peso corporal')} × ${suggestedReps(sg, 0)}` : t('Apunta a {n} reps', { n: suggestedReps(sg, 0) });
   const tag = sg.kind === 'start' && sg.basis === 'marca' ? t('tus marcas') : kindLabel(sg.kind);
-  return `<details class="suggest ${sg.kind}"><summary><b>💡 ${main}</b>${tag ? `<span class="kind">${tag}</span>` : ''}</summary>${sg.lastText ? `<small>${t('Última vez:')} ${esc(sg.lastText)}</small>` : ''}<small>${esc(sg.note)}</small></details>${hint}`;
+  return `<details class="suggest ${sg.kind}"><summary><b>${ic('bulb')} ${main}</b>${tag ? `<span class="kind">${tag}</span>` : ''}</summary>${sg.lastText ? `<small>${t('Última vez:')} ${esc(sg.lastText)}</small>` : ''}<small>${esc(sg.note)}</small></details>${hint}`;
 }
+
+/** Estado vacío: icono, qué pasa, qué hacer y un botón de acción. */
+const emptyState = (icon, title, text, actions = '') => `<div class="empty">${ic(icon)}<h3>${title}</h3>${text ? `<p>${text}</p>` : ''}${actions ? `<div class="row">${actions}</div>` : ''}</div>`;
 
 /** Hoy + esta semana y la próxima: qué toca, qué hiciste y qué falta. */
 const calWeeks = (weeks = 2) => buildWeeks({ now: Date.now(), routines: state.routines, workouts: state.workouts, moves: state.moves, weeks });
@@ -609,7 +613,7 @@ function pendingCard(weeks) {
     <b>${t('Pendiente esta semana')}</b>
     ${missed.map((d) => `<div class="row between pend"><span>${esc(rName(d.routine.name))} <span class="muted">· ${dayLabel(d)}</span></span><span class="row"><button class="small" data-action="cal-move" data-iso="${d.iso}">${t('Reprogramar')}</button><button class="small ghost" data-action="cal-skip" data-iso="${d.iso}">${t('Saltar')}</button></span></div>`).join('')}
     ${partial.map((d) => `<div class="row between pend"><span>${esc(rName(d.routine.name))} <span class="muted">· ${t('faltó {n}', { n: d.workout.skipped.length })}</span></span><button class="small" data-action="start-rest" data-id="${d.workout.id}">${t('Hacer lo que falta')}</button></div>`).join('')}
-    ${review ? `<button class="small block" data-action="week-review">💬 ${t('Revisar la semana con IA')}</button>` : ''}
+    ${review ? `<button class="small block" data-action="week-review">${ic('coach')} ${t('Revisar la semana con IA')}</button>` : ''}
   </div>`;
 }
 
@@ -702,11 +706,12 @@ function viewTrain() {
     const cal = viewCalendar();
     const today = todayName();
     const order = (r) => (r.fromPlan ? WEEKDAYS.indexOf(r.weekday) : 99);
-    const routines = [...state.routines].sort((x, y) => order(x) - order(y)).map((r) => `
-      <button class="card block ${r.fromPlan && r.weekday === today ? 'today' : ''}" style="text-align:left" data-action="start" data-id="${r.id}">
+    const routineRows = [...state.routines].sort((x, y) => order(x) - order(y)).map((r) => `
+      <button class="item ${r.fromPlan && r.weekday === today ? 'today' : ''}" data-action="start" data-id="${r.id}">
         <div class="row between"><h3>${esc(rName(r.name))}</h3><span class="pill">${r.fromPlan ? (r.weekday === today ? `${t('Hoy')} · ` : '') + esc(t(r.weekday)) : tn(r.exerciseIds.length, '{n} ejercicio', '{n} ejercicios')}</span></div>
         <div class="rlist">${r.exerciseIds.map((id) => esc(exDisp(id))).join(' · ') || t('Sin ejercicios')}</div>
       </button>`).join('');
+    const routines = routineRows ? `<div class="list">${routineRows}</div>` : '';
     const weekAgo = Date.now() - 7 * 864e5;
     const thisWeek = state.workouts.filter((w) => w.start >= weekAgo).length;
     const missing = missingLoads().length;
@@ -716,15 +721,18 @@ function viewTrain() {
       ${cal}
       <div class="actions2">
         <button class="primary" data-action="start">+ ${t('Entreno vacío')}</button>
-        <button data-action="voice-open">🎙️ ${t('Dictar')}</button>
+        <button data-action="voice-open">${ic('mic')} ${t('Dictar')}</button>
       </div>
-      ${cal ? (routines ? `<details class="how"><summary>${t('Todas las rutinas')}</summary>${routines}</details>` : '') : (routines || `<p class="muted">${t('Sin rutinas. Crea un plan en la pestaña Plan.')}</p>`)}
+      ${cal ? (routines ? `<details class="how"><summary>${t('Todas las rutinas')}</summary>${routines}</details>` : '') : (routines || emptyState('coach', t('Aún no tienes rutinas'), t('Crea tu plan con el coach y tus rutinas aparecerán aquí.'), `<button class="primary" data-action="go-plan">${t('Crear mi plan')}</button><button data-action="start">+ ${t('Entreno vacío')}</button>`))}
       ${state.workouts.length ? `<p class="statline"><b>${thisWeek}</b> ${t('esta semana')} · <b>${state.workouts.length}</b> ${t('entrenos')} · <b>${fmtKg(state.workouts.reduce((sum, w) => sum + workoutVolume(w), 0) / 1000)}</b> ${t('t')}</p>` : ''}`;
   }
 
   if (reorder) return viewReorder(a);
 
   const tm = a.timer;
+  // La serie que toca ahora: la primera sin hacer de todo el entreno.
+  let cur = null;
+  a.entries.some((e, ei) => e.sets.some((s, si) => { if (!s.done) { cur = { ei, si }; return true; } return false; }));
   const entries = a.entries.map((e, ei) => {
     const g = e.group ? { next: nextInGroup(a, e.group), others: a.entries.filter((x) => x.group === e.group && x !== e) } : null;
     const prev = lastSetsFor(e.exerciseId);
@@ -733,7 +741,7 @@ function viewTrain() {
       const running = tm?.kind === 'set' && tm.e === ei && tm.s === si;
       const isNext = g?.next && g.next.entry === e && g.next.si === si;
       return `
-      <tr class="${s.done ? 'done' : ''} ${running ? 'running' : ''} ${isNext ? 'next' : ''}">
+      <tr class="${s.done ? 'done' : ''} ${running ? 'running' : ''} ${isNext ? 'next' : ''} ${!g && !running && cur && cur.ei === ei && cur.si === si ? 'current' : ''}">
         <td>${si + 1}</td>
         <td class="prev">${prev[si] ? fmtSet(e.exerciseId, prev[si]) : '—'}</td>
         <td><input class="${s.sug && !s.done ? 'sug' : ''}" inputmode="decimal" dir="ltr" placeholder="${t('kg')}" value="${esc(s.w)}" data-field="w" data-e="${ei}" data-s="${si}" aria-label="${t('Peso serie {n}', { n: si + 1 })}"></td>
@@ -746,15 +754,15 @@ function viewTrain() {
     }).join('');
     const tg = e.target;
     return `
-      <div class="card ${g ? 'grouped' : ''}" ${g ? `style="--block:${blockColor(a.entries, e.group)}"` : ''}>
+      <div class="card ${g ? 'grouped' : ''} ${e.sets.length && e.sets.every((x) => x.done) ? 'exdone' : ''}" ${g ? `style="--block:${blockColor(a.entries, e.group)}"` : ''}>
         <div class="row between">
           <h3>${esc(exDisp(e.exerciseId))}${e.adj ? ` <span class="pill">${esc(adjLabel(e))}</span>` : ''}</h3>
           <div class="row">
-            <button class="ghost small" data-action="set-rest" data-e="${ei}" aria-label="${t('Cambiar descanso')}">⏱ ${fmtSecs(restForEntry(e))}</button>
+            <button class="ghost small" data-action="set-rest" data-e="${ei}" aria-label="${t('Cambiar descanso')}">${ic('clock')} ${fmtSecs(restForEntry(e))}</button>
             <button class="ghost danger" data-action="remove-entry" data-e="${ei}" aria-label="${t('Quitar ejercicio')}">✕</button>
           </div>
         </div>
-        ${g ? `<div class="blockinfo">🔗 <b>${blockLetter(a.entries, e.group)}</b> · ${g.next ? t('toca {name} · serie {n}', { name: `<b>${esc(exDisp(g.next.entry.exerciseId))}</b>`, n: g.next.si + 1 }) : t('bloque completo ✓')}</div>` : ''}
+        ${g ? `<div class="blockinfo">${ic('link')} <b>${blockLetter(a.entries, e.group)}</b> · ${g.next ? t('toca {name} · serie {n}', { name: `<b>${esc(exDisp(g.next.entry.exerciseId))}</b>`, n: g.next.si + 1 }) : t('bloque completo ✓')}</div>` : ''}
         ${targetHTML(tg, timed)}
         ${suggestHTML(e.suggest, e.exerciseId)}
         <table class="sets">
@@ -775,15 +783,15 @@ function viewTrain() {
         <span class="muted timer" id="elapsed">${fmtDuration(Date.now() - a.start)}</span>
       </div>
       <div class="row">
-        ${a.entries.length > 1 ? `<button class="icon" data-action="reorder-start" aria-label="${t('Orden y bloques')}">↕️</button>` : ''}
+        ${a.entries.length > 1 ? `<button class="icon" data-action="reorder-start" aria-label="${t('Orden y bloques')}">${ic('reorder')}</button>` : ''}
         <button class="primary" data-action="finish">${t('Terminar')}</button>
       </div>
     </div>
     ${a.entries.some((e) => e.suggest?.kind === 'calibrate') ? loadsBanner(a.entries.filter((e) => e.suggest?.kind === 'calibrate').length) : ''}
-    ${entries || `<div class="empty"><div class="big">💪</div>${t('Añade tu primer ejercicio')}</div>`}
+    ${entries || emptyState('train', t('Añade tu primer ejercicio'), t('Elige de tu biblioteca o dicta lo que llevas hecho.'), '')}
     <div class="actions2">
       <button data-action="add-exercise">+ ${t('Ejercicio')}</button>
-      <button data-action="voice-open-active">🎙️ ${t('Dictar')}</button>
+      <button data-action="voice-open-active">${ic('mic')} ${t('Dictar')}</button>
     </div>
     <button class="ghost danger small center" data-action="discard">${t('Descartar entreno')}</button>`;
 }
@@ -795,10 +803,10 @@ function viewReorder(a) {
     return `
       <div class="rrow ${e.group ? 'grouped' : ''}" ${e.group ? `style="--block:${blockColor(a.entries, e.group)}"` : ''}>
         <button class="handle" data-handle aria-label="${t('Arrastrar para cambiar el orden')}">⠿</button>
-        <div class="rname"><b>${esc(exDisp(e.exerciseId))}</b><small>${e.group ? `🔗 ${t('Bloque {l}', { l: lab })} · ` : ''}${tn(e.sets.length, '{n} serie', '{n} series')}${done ? ` · ${t('{n} hechas', { n: done })}` : ''}</small></div>
+        <div class="rname"><b>${esc(exDisp(e.exerciseId))}</b><small>${e.group ? `${ic('link')} ${t('Bloque {l}', { l: lab })} · ` : ''}${tn(e.sets.length, '{n} serie', '{n} series')}${done ? ` · ${t('{n} hechas', { n: done })}` : ''}</small></div>
         <button class="icon" data-action="move-up" data-e="${i}" aria-label="${t('Subir')}" ${i === 0 ? 'disabled' : ''}>▲</button>
         <button class="icon" data-action="move-down" data-e="${i}" aria-label="${t('Bajar')}" ${i === a.entries.length - 1 ? 'disabled' : ''}>▼</button>
-        <button class="icon" data-action="block-dialog" data-e="${i}" aria-label="${t('Alternar series con otros ejercicios')}">🔗</button>
+        <button class="icon" data-action="block-dialog" data-e="${i}" aria-label="${t('Alternar series con otros ejercicios')}">${ic('link')}</button>
       </div>`;
   }).join('');
   return `
@@ -806,13 +814,13 @@ function viewReorder(a) {
       <h3>${t('Orden y bloques')}</h3>
       <button class="primary" data-action="reorder-done">${t('Listo')}</button>
     </div>
-    <p class="muted hint">⠿ ${t('arrastra para ordenar')} · 🔗 ${t('alterna series entre ejercicios')}</p>
+    <p class="muted hint">⠿ ${t('arrastra para ordenar')} · ${ic('link')} ${t('alterna series entre ejercicios')}</p>
     ${rows}`;
 }
 
 function viewRoutines() {
   const routines = state.routines.map((r) => `
-    <div class="card">
+    <div class="item">
       <div class="row between">
         <h3>${esc(rName(r.name))}</h3>
         <div class="row">
@@ -826,16 +834,16 @@ function viewRoutines() {
   const groups = {};
   state.exercises.forEach((e) => (groups[e.muscle] ||= []).push(e));
   const exercises = Object.keys(groups).sort((a, b) => mLabel(a).localeCompare(mLabel(b), getLang())).map((m) => `
-    <div class="card">
-      <span class="pill">${esc(mLabel(m))}</span>
+    <section class="list">
+      <h3 class="list-title">${esc(mLabel(m))}</h3>
       ${groups[m].sort((a, b) => exLabel(a.name).localeCompare(exLabel(b.name), getLang())).map((e) => `
-        <div class="row between" style="margin-top:6px">
+        <div class="item row between">
           <button class="ghost link" data-action="edit-exercise" data-id="${e.id}">
-            ${esc(exLabel(e.name))}${e.type === 'time' ? ` <span class="muted">· ${t('tiempo')}</span>` : ''}${e.rest == null ? '' : ` <span class="muted">· ⏱ ${fmtSecs(e.rest)}</span>`}
+            ${esc(exLabel(e.name))}${e.type === 'time' ? ` <span class="muted">· ${t('tiempo')}</span>` : ''}${e.rest == null ? '' : ` <span class="muted">· ${ic('clock')} ${fmtSecs(e.rest)}</span>`}
           </button>
           <button class="ghost danger" data-action="delete-exercise" data-id="${e.id}" aria-label="${t('Borrar {name}', { name: esc(exLabel(e.name)) })}">✕</button>
         </div>`).join('')}
-    </div>`).join('');
+    </section>`).join('');
 
   const dups = findDuplicates(state.exercises).slice(0, 3);
   const dupHTML = dups.length ? `
@@ -845,41 +853,39 @@ function viewRoutines() {
   return `
     ${dupHTML}
     <div class="row between"><h2>${t('Mis rutinas')}</h2><button class="primary" data-action="new-routine">+ ${t('Nueva')}</button></div>
-    ${routines || `<p class="muted">${t('Sin rutinas.')}</p>`}
+    ${routines ? `<div class="list">${routines}</div>` : emptyState('list', t('Sin rutinas.'), t('Una rutina es la lista de ejercicios de un día de entreno.'), `<button class="primary" data-action="new-routine">+ ${t('Nueva')}</button>`)}
     <div class="row between" style="margin-top:20px"><h2>${t('Ejercicios')}</h2><button data-action="new-exercise">+ ${t('Nuevo')}</button></div>
     ${exercises}
     <h2 style="margin-top:20px">${t('Datos')}</h2>
-    <div class="card row">
+    <div class="row">
       <button class="block" data-action="export">${t('Exportar copia')}</button>
       <button class="block" data-action="import">${t('Importar')}</button>
     </div>`;
 }
 
 function viewHistory() {
-  const tools = `<div class="row wrap" style="margin-bottom:12px">
-    <button class="small" data-action="voice-open">🎙️ ${t('Registrar')}</button>
-    <button class="small" data-action="import-open">📥 ${t('Importar')}</button>
-  </div>`;
+  const buttons = `<button class="${state.workouts.length ? 'small' : 'primary'}" data-action="voice-open">${ic('mic')} ${t('Registrar')}</button>
+    <button class="${state.workouts.length ? 'small' : ''}" data-action="import-open">${ic('import')} ${t('Importar')}</button>`;
   if (!state.workouts.length) {
-    return `${tools}<div class="empty"><div class="big">🗓️</div>${t('Sin entrenos todavía.')}</div>`;
+    return emptyState('calendar', t('Sin entrenos todavía.'), t('Cuando termines un entreno, aparecerá aquí con sus series y sus cargas. También puedes dictar uno o importar tu historial.'), buttons);
   }
-  return `<h2>${t('Historial')}</h2>${tools}` + [...state.workouts].reverse().map((w) => `
-    <div class="card">
+  return `<h2>${t('Historial')}</h2><div class="row wrap" style="margin-bottom:12px">${buttons}</div><div class="list">` + [...state.workouts].reverse().map((w) => `
+    <div class="item">
       <div class="row between">
         <div><h3>${esc(rName(w.name))}${w.partial ? ` <span class="pill warn">${t('parcial')}</span>` : ''}</h3><span class="muted">${fmtDate(w.start)} · ${fmtDuration(w.end - w.start)} · ${fmtKg(workoutVolume(w))} ${t('kg')}</span></div>
         <div class="row">
-          <button class="ghost" data-action="workout-edit" data-id="${w.id}" aria-label="${t('Editar entreno')}">✏️</button>
+          <button class="ghost" data-action="workout-edit" data-id="${w.id}" aria-label="${t('Editar entreno')}">${ic('edit')}</button>
           <button class="ghost danger" data-action="delete-workout" data-id="${w.id}" aria-label="${t('Borrar entreno')}">✕</button>
         </div>
       </div>
       <div class="stack" style="margin-top:8px">
         ${w.entries.map((e) => {
           const done = e.sets.filter((s) => s.done);
-          const badge = e.group ? ` <span class="pill">🔗${blockLetter(w.entries, e.group)}</span>` : '';
+          const badge = e.group ? ` <span class="pill">${ic('link')}${blockLetter(w.entries, e.group)}</span>` : '';
           return `<div class="row between"><span>${esc(exDisp(e.exerciseId))}${badge}</span><span class="muted">${done.map((s) => fmtSet(e.exerciseId, s)).join(', ') || '—'}</span></div>`;
         }).join('')}
       </div>
-    </div>`).join('');
+    </div>`).join('') + '</div>';
 }
 
 function progressSeries(exerciseId) {
@@ -921,7 +927,7 @@ function lineChart(points, fmt) {
 function viewProgress() {
   const used = state.exercises.filter((e) => progressSeries(e.id).length);
   if (!used.length) {
-    return `<div class="empty"><div class="big">📈</div>${t('Completa algunas series y aquí verás tu progreso.')}</div>`;
+    return emptyState('trend', t('Aún no hay progreso que mostrar'), t('Completa algunas series y aquí verás tu progreso.'), `<button class="primary" data-action="go-train">${t('Ir a Entrenar')}</button>`);
   }
   if (!used.some((e) => e.id === progressExerciseId)) progressExerciseId = used[0].id;
   const timed = isTimed(progressExerciseId);
@@ -1155,6 +1161,8 @@ const actions = {
     }
     cleanGroups(a);
   },
+  'go-train'() { tab = 'train'; },
+  'go-plan'() { tab = 'plan'; },
   'reorder-start'() { reorder = true; },
   'reorder-done'() { reorder = false; },
   'move-up'(_, el) { moveEntry(+el.dataset.e, +el.dataset.e - 1); return false; },
@@ -1315,7 +1323,7 @@ const actions = {
         <div class="stack" style="margin-top:12px">
           <button class="block primary" value="start">${day.workout ? t('Hacerlo otra vez') : day.status === 'missed' ? t('Hacerlo ahora') : t('Empezar')}</button>
           ${day.status === 'partial' && day.workout?.skipped?.length ? `<button class="block" value="rest">${t('Hacer lo que faltó')}</button>` : ''}
-          ${canMove ? `<button class="block" value="move">📅 ${t('Mover a otro día')}</button><button class="block" value="skip">${t('Saltar esta sesión')}</button>` : ''}
+          ${canMove ? `<button class="block" value="move">${ic('calendar')} ${t('Mover a otro día')}</button><button class="block" value="skip">${t('Saltar esta sesión')}</button>` : ''}
           ${day.movedFrom && !day.workout ? `<button class="block ghost" value="back">${t('Volver a su día')}</button>` : ''}
           ${day.workout ? `<button class="block" value="history">${t('Ver en historial')}</button>` : ''}
           <button class="block ghost" value="cancel" formnovalidate>${t('Cerrar')}</button>
@@ -1382,6 +1390,9 @@ const actions = {
       <label class="field">${t('Idioma')}
         <select name="lang">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}" ${k === getLang() ? 'selected' : ''}>${v}</option>`).join('')}</select>
       </label>
+      <label class="field" style="margin-top:12px">${t('Tema')}
+        <select name="theme">${[['system', t('Seguir al sistema')], ['light', t('Claro')], ['dark', t('Oscuro')]].map(([k, v]) => `<option value="${k}" ${k === (s.theme || 'system') ? 'selected' : ''}>${v}</option>`).join('')}</select>
+      </label>
       <label class="field" style="margin-top:12px">${t('Descanso entre series')}
         <select name="rest">${restOptions(s.rest)}</select>
       </label>
@@ -1392,6 +1403,8 @@ const actions = {
       ${dialogButtons(t('Guardar'))}`,
     (fd) => {
       const newLang = fd.get('lang');
+      s.theme = ['light', 'dark'].includes(fd.get('theme')) ? fd.get('theme') : 'system';
+      applyTheme();
       s.rest = +fd.get('rest');
       s.lockscreen = fd.has('lockscreen');
       s.sound = fd.has('sound');
@@ -1745,6 +1758,14 @@ function toast(msg) {
 function applyLang() {
   setLang(state.settings.lang || detectLang());
   applyStatic();
+  applyTheme();
+}
+
+/** Tema: el del sistema (por defecto), claro u oscuro. */
+function applyTheme() {
+  const th = state.settings.theme;
+  if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th;
+  else delete document.documentElement.dataset.theme;
 }
 
 /** Textos del index.html: los elementos con data-i18n (y data-i18n-aria para etiquetas accesibles). */

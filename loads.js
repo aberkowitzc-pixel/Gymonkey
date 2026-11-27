@@ -4,6 +4,7 @@
 import { callAI, aiProfile, planBrief } from './plan.js';
 import { matchExercise } from './exercises.js';
 import { t, exLabel } from './i18n.js';
+import { ic } from './icons.js';
 
 let ctx;
 export function initLoads(c) { ctx = c; }
@@ -84,13 +85,14 @@ export function viewLoads() {
     return `<div class="card ai-loading" role="status">
       <h3>${t('Calculando tus cargas…')}</h3>
       <div class="progress" aria-hidden="true"><i id="ld-bar" style="width:${Math.round(l.shown)}%"></i></div>
+      <div class="skel" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="row between"><span id="ld-phase" class="phase">${esc(l.phase)}</span><b id="ld-pct" class="timer">${Math.round(l.shown)} %</b></div>
-      <div class="row between small-line muted"><span>⏱ <b id="ld-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
+      <div class="row between small-line muted"><span>${ic('clock')} <b id="ld-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
       <button class="ghost block" style="margin-top:8px" data-action="ld-cancel-ai">${t('Cancelar')}</button>
     </div>`;
   }
   if (ld.error) {
-    return `<div class="card error" role="alert"><p style="margin:0 0 8px">⚠️ ${esc(ld.error)}</p>
+    return `<div class="card error" role="alert"><p style="margin:0 0 8px">${ic('alert')} ${esc(ld.error)}</p>
       <div class="row"><button class="primary" data-action="ld-retry">${t('Reintentar')}</button><button data-action="ld-close">${t('Cerrar')}</button></div></div>`;
   }
   if (!ld.asked) return '';

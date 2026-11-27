@@ -4,6 +4,7 @@
 import { callAI, aiProfile, trainingSummary, planBrief } from './plan.js';
 import { validateActions, describeAction, applyActions } from './weekplan.js';
 import { t, tn } from './i18n.js';
+import { ic } from './icons.js';
 
 let ctx;
 export function initWeek(c) { ctx = c; }
@@ -77,13 +78,14 @@ export function viewWeek() {
     return `<div class="card ai-loading" role="status">
       <h3>${t('Revisando tu semana…')}</h3>
       <div class="progress" aria-hidden="true"><i id="wk-bar" style="width:${Math.round(l.shown)}%"></i></div>
+      <div class="skel" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="row between"><span id="wk-phase" class="phase">${esc(l.phase)}</span><b id="wk-pct" class="timer">${Math.round(l.shown)} %</b></div>
-      <div class="row between small-line muted"><span>⏱ <b id="wk-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
+      <div class="row between small-line muted"><span>${ic('clock')} <b id="wk-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
       <button class="ghost block" style="margin-top:8px" data-action="wk-cancel-ai">${t('Cancelar')}</button>
     </div>`;
   }
   if (wk.error) {
-    return `<div class="card error" role="alert"><p style="margin:0 0 8px">⚠️ ${esc(wk.error)}</p>
+    return `<div class="card error" role="alert"><p style="margin:0 0 8px">${ic('alert')} ${esc(wk.error)}</p>
       <div class="row"><button class="primary" data-action="wk-retry">${t('Reintentar')}</button><button data-action="wk-close">${t('Cerrar')}</button></div></div>`;
   }
   const r = wk.data;

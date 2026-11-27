@@ -6,6 +6,7 @@ import { MAX_DOC, promptOtraIA, buildExport } from './context.js';
 import { matchExercise, addAlias } from './exercises.js';
 import { knownLoads } from './progression.js';
 import { t, tn, T, LANGS, getLang, fmtNum, exLabel, dayShort, canonicalExercise } from './i18n.js';
+import { ic } from './icons.js';
 
 export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const GOALS = [
@@ -281,19 +282,20 @@ function loadingCard() {
   return `<div class="card ai-loading" role="status">
       <h3>${esc(ui.loading.text)}</h3>
       <div class="progress" aria-hidden="true"><i id="ai-bar" style="width:${Math.round(ui.loading.shown)}%"></i></div>
+      <div class="skel" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="row between"><span id="ai-phase" class="phase">${esc(ui.loading.phase)}</span><b id="ai-pct" class="timer">${Math.round(ui.loading.shown)} %</b></div>
-      <div class="row between small-line muted"><span>⏱ <b id="ai-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
+      <div class="row between small-line muted"><span>${ic('clock')} <b id="ai-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
       <button class="ghost block" style="margin-top:8px" data-action="plan-cancel-ai">${t('Cancelar')}</button>
     </div>`;
 }
 
 export function viewPlan() {
   if (ui.loading && !ui.loading.chat) return loadingCard();
-  const err = ui.error ? `<div class="card error" role="alert"><p style="margin:0 0 8px">⚠️ ${esc(ui.error)}</p>${ui.lastRun ? `<button class="primary" data-action="plan-retry">${t('Reintentar')}</button>` : ''}</div>` : '';
+  const err = ui.error ? `<div class="card error" role="alert"><p style="margin:0 0 8px">${ic('alert')} ${esc(ui.error)}</p>${ui.lastRun ? `<button class="primary" data-action="plan-retry">${t('Reintentar')}</button>` : ''}</div>` : '';
   const login = ctx.auth.configured && !ctx.auth.user()
     ? `<div class="card"><button class="primary block" data-action="sign-in">${t('Iniciar sesión con Google')}</button><p class="muted" style="margin:8px 0 0;text-align:center">${t('Para usar la IA y guardar tus datos')}</p></div>`
     : '';
-  const demo = DEMO_AI ? `<div class="card demo-note">🧪 <b>${t('Modo demo')}</b> · ${t('la IA está simulada')}</div>` : '';
+  const demo = DEMO_AI ? `<div class="card demo-note">${ic('flask')} <b>${t('Modo demo')}</b> · ${t('la IA está simulada')}</div>` : '';
   if (ui.step === 'form') return err + demo + login + formView();
   if (ui.step === 'questions') return err + demo + questionsView();
   if (!S().plan && !ui.editing) return err + demo + login + chatView();
@@ -365,7 +367,7 @@ function chatView() {
     : '';
   const busy = !!ui.loading;
   return `<div class="chat">
-    <div class="row between chat-head"><h2>🧠 ${t('Tu coach')}</h2>${plan ? `<button class="small" data-action="plan-chat-toggle">📋 ${t('Ver plan')}</button>` : ''}</div>
+    <div class="row between chat-head"><h2>${ic('coach')} ${t('Tu coach')}</h2>${plan ? `<button class="small" data-action="plan-chat-toggle">${ic('clipboard')} ${t('Ver plan')}</button>` : ''}</div>
     <div class="bubbles">
       ${intro}
       ${msgs.map((m) => bubble(m, m.id === lastChange && canUndo)).join('')}
@@ -418,16 +420,16 @@ function sendChat(text) {
 function contextBlock(value = '', open = false) {
   return `
     <details class="ctx" ${open || value ? 'open' : ''}>
-      <summary><b>📎 ${t('Adjuntar plan o notas')}</b></summary>
+      <summary><b>${ic('clip')} ${t('Adjuntar plan o notas')}</b></summary>
       <div class="row wrap" style="margin-top:8px">
-        <label class="file-btn"><input type="file" data-ctx-file accept=".md,.markdown,.txt,.csv,.json,text/*"><span>📄 ${t('Archivo')}</span></label>
-        <button type="button" class="small" data-action="ctx-copy-prompt">📋 ${t('Prompt para otra IA')}</button>
-        <button type="button" class="small" data-action="ctx-copy-export">📤 ${t('Mis datos')}</button>
-        <button type="button" class="small" data-action="ctx-download-export">⬇️ .md</button>
+        <label class="file-btn"><input type="file" data-ctx-file accept=".md,.markdown,.txt,.csv,.json,text/*"><span>${ic('file')} ${t('Archivo')}</span></label>
+        <button type="button" class="small" data-action="ctx-copy-prompt">${ic('clipboard')} ${t('Prompt para otra IA')}</button>
+        <button type="button" class="small" data-action="ctx-copy-export">${ic('export')} ${t('Mis datos')}</button>
+        <button type="button" class="small" data-action="ctx-download-export">${ic('import')} .md</button>
       </div>
       <textarea name="context_doc" data-ctxdoc rows="5" placeholder="${t('Pega aquí tu plan o notas…')}">${esc(value)}</textarea>
       <div class="ctx-tools">
-        <div class="row between small-line muted"><span>🔒 ${t('Se envía a la IA · sin datos personales')}</span><span data-ctx-count dir="ltr">${fmtNum(value.length)} / ${fmtNum(MAX_DOC)}</span></div>
+        <div class="row between small-line muted"><span>${ic('lock')} ${t('Se envía a la IA · sin datos personales')}</span><span data-ctx-count dir="ltr">${fmtNum(value.length)} / ${fmtNum(MAX_DOC)}</span></div>
         <details class="how"><summary>${t('¿Cómo funciona?')}</summary>
           <ol class="muted ctx-steps">
             <li>${t('Abre tu otra IA en la conversación que ya tiene tu historial.')}</li>
@@ -480,7 +482,7 @@ function questionsView() {
           <b>${esc(x.question)}</b>
           <details class="why"><summary>${t('¿Por qué?')}</summary><p class="muted" style="margin:4px 0 0">${esc(x.why)}</p></details>
           ${chips(`q_${i}`, x.options, [ui.draft[`q_${i}`]].filter(Boolean), 'radio', false)}
-          <input name="q_${i}_other" placeholder="${t('Otra respuesta (opcional)')}" value="${esc(ui.draft[`q_${i}_other`] || '')}" style="margin-top:8px">
+          <input name="q_${i}_other" aria-label="${t('Otra respuesta (opcional)')}" placeholder="${t('Otra respuesta (opcional)')}" value="${esc(ui.draft[`q_${i}_other`] || '')}" style="margin-top:8px">
         </div>`).join('')}
       <button class="primary block">${t('Generar mi plan')}</button>
       <button type="button" class="ghost block" data-action="plan-back-form">${t('Volver al cuestionario')}</button>
@@ -495,7 +497,7 @@ function loadCell(x) {
 }
 
 function exerciseTable(d) {
-  return `<table class="plan-table">
+  return `<div class="scroll-x" tabindex="0"><table class="plan-table">
     <thead><tr><th>${t('Ejercicio')}</th><th>${t('Series')}</th><th>${t('Carga')}</th><th>RIR</th><th>${t('Desc.')}</th></tr></thead>
     <tbody>${d.exercises.map((x) => `
       <tr>
@@ -505,7 +507,7 @@ function exerciseTable(d) {
         <td>${esc(x.rir)}</td>
         <td>${ctx.fmtSecs(x.rest_seconds)}</td>
       </tr>`).join('')}</tbody>
-  </table>`;
+  </table></div>`;
 }
 
 function planView(plan) {
@@ -523,13 +525,13 @@ function planView(plan) {
         <div class="row between"><h3>${t('Semana {w} de {total}', { w: wi.week, total: plan.total_weeks })}</h3>${wi.wp?.deload ? `<span class="pill">${t('Descarga')}</span>` : ''}</div>
         <div class="bar light"><i style="width:${pct}%"></i></div>
         <p style="margin:8px 0 0"><b>${esc(plan.mesocycles[wi.meso].name)}</b>${wi.wp ? ` · ${esc(wi.wp.guidance)}` : ''}</p>
-        ${wi.finished ? `<p class="muted">🎉 ${t('Plan completado')}</p>` : ''}
+        ${wi.finished ? `<p class="muted">${ic('flag')} ${t('Plan completado')}</p>` : ''}
         ${plan.appliedMeso !== wi.meso ? `<button class="primary block" style="margin-top:10px" data-action="plan-apply">${t('Actualizar rutinas')} · ${esc(plan.mesocycles[wi.meso].name)}</button>` : ''}
       </div>`;
 
   const changes = plan.lastMessage || plan.lastChanges?.length
     ? `<div class="card">
-        <p style="margin-top:0">💬 ${esc(plan.lastMessage)}</p>
+        <p style="margin-top:0">${ic('coach')} ${esc(plan.lastMessage)}</p>
         ${plan.lastChanges?.length ? `<ul class="changes">${plan.lastChanges.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}
         <div class="row">
           ${plan.history?.length ? `<button class="small" data-action="plan-undo">↩ ${t('Deshacer cambios')}</button>` : ''}
@@ -539,7 +541,7 @@ function planView(plan) {
     : '';
 
   return `
-    <div class="row between" style="margin-bottom:8px"><span></span><button class="small" data-action="plan-chat-toggle">💬 ${t('Chat')}</button></div>
+    <div class="row between" style="margin-bottom:8px"><span></span><button class="small" data-action="plan-chat-toggle">${ic('coach')} ${t('Chat')}</button></div>
     <div class="card">
       <h2 style="margin:0 0 8px">${esc(plan.title)}</h2>
       <div class="tags">
@@ -547,15 +549,15 @@ function planView(plan) {
         <span class="pill">${tn(plan.days_per_week, '{n} día', '{n} días')}</span>
         <span class="pill">${t('{n} min', { n: plan.session_minutes })}</span>
         <span class="pill">${t('{n} sem', { n: plan.total_weeks })}</span>
-        <span class="pill">📅 ${esc(plan.schedule.map(dayShort).join(' · '))}</span>
+        <span class="pill">${ic('calendar')} ${esc(plan.schedule.map(dayShort).join(' · '))}</span>
       </div>
       <details class="how"><summary>${t('Resumen')}</summary><p style="margin:6px 0 0">${esc(plan.summary)}</p></details>
     </div>
     ${changes}
     ${progress}
     <div class="row wrap">
-      <button class="primary" data-action="plan-feedback">💬 ${t('Ajustar con IA')}</button>
-      <button data-action="plan-edit">✏️ ${t('Editar')}</button>
+      <button class="primary" data-action="plan-feedback">${ic('coach')} ${t('Ajustar con IA')}</button>
+      <button data-action="plan-edit">${ic('edit')} ${t('Editar')}</button>
       <button class="ghost danger" data-action="plan-new">${t('Nuevo plan')}</button>
     </div>
 
@@ -576,14 +578,14 @@ function planView(plan) {
         ${exerciseTable(d)}
       </div>`).join('')}
 
-    <details class="card"><summary><b>🔬 ${t('En qué se basa este plan')}</b></summary>
+    <details class="card"><summary><b>${ic('book')} ${t('En qué se basa este plan')}</b></summary>
       <ul class="principles">${plan.principles.map((p) => `<li><b>${esc(p.title)}.</b> ${esc(p.detail)} <span class="muted">(${esc(p.source)})</span></li>`).join('')}</ul>
     </details>
-    <details class="card"><summary><b>📈 ${t('Cómo progresar')}</b></summary>
+    <details class="card"><summary><b>${ic('trend')} ${t('Cómo progresar')}</b></summary>
       <ul>${plan.progression_rules.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
       <p><b>${t('Calentamiento:')}</b> ${esc(plan.warmup)}</p>
     </details>
-    <details class="card"><summary><b>📝 ${t('Notas')}</b></summary>
+    <details class="card"><summary><b>${ic('edit')} ${t('Notas')}</b></summary>
       ${plan.notes?.length ? `<ul>${plan.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
       <p class="muted small-print">${t('Plan orientativo generado por IA. No sustituye a un profesional sanitario o a un entrenador; si sientes dolor, para y consulta.')}</p>
     </details>`;
@@ -612,7 +614,7 @@ function editView() {
           <label class="field">${t('Día')}<input data-edit="d.${mi}.${di}.name" value="${esc(d.name)}"></label>
           <label class="field">${t('Día de la semana')}<select data-edit="d.${mi}.${di}.weekday">${wd(d.weekday)}</select></label>
         </div>
-        <table class="edit-table">
+        <div class="scroll-x" tabindex="0"><table class="edit-table">
           <thead><tr><th>${t('Ejercicio')}</th><th>${t('Series')}</th><th>${t('Reps')}</th><th>${t('Kg')}</th><th>RIR</th><th>${t('Desc. (s)')}</th><th></th></tr></thead>
           <tbody>${d.exercises.map((x, xi) => `
             <tr>
@@ -624,7 +626,7 @@ function editView() {
               <td><input inputmode="numeric" dir="ltr" data-edit="x.${mi}.${di}.${xi}.rest_seconds" value="${x.rest_seconds}" aria-label="${t('Descanso en segundos')}"></td>
               <td><button class="ghost danger" data-action="plan-edit-del-ex" data-m="${mi}" data-d="${di}" data-x="${xi}" aria-label="${t('Quitar ejercicio')}">✕</button></td>
             </tr>`).join('')}</tbody>
-        </table>
+        </table></div>
         <div class="row" style="margin-top:8px">
           <button class="block" data-action="plan-edit-add-ex" data-m="${mi}" data-d="${di}">+ ${t('Ejercicio')}</button>
           <button class="ghost danger" data-action="plan-edit-del-day" data-m="${mi}" data-d="${di}">${t('Eliminar día')}</button>

@@ -35,6 +35,8 @@ Sin iniciar sesión, los datos se guardan solo en el dispositivo. Con sesión in
 
 - **Español, inglés y hebreo.** El idioma se elige en ⚙️ Ajustes (por defecto, el del navegador). En hebreo toda la interfaz se invierte (de derecha a izquierda). La IA responde en el idioma elegido y los ejercicios se reconocen en cualquiera de los tres. Para añadir textos nuevos: escríbelos con `t('Texto en español')` y añade su traducción en `lang/en.js` y `lang/he.js`; `npm test` falla si falta alguna (`node tools/i18n-missing.mjs` lista lo que falta).
 
+- **Diseño.** Sistema de diseño en `styles.css` (variables CSS, sin paso de compilación): colores con contraste AA verificado, escala tipográfica de 7 pasos, espaciado de 4 px, radios 8/12/20 y iconos SVG propios (`icons.js`). Tipografías Rubik (títulos), Heebo (texto) y JetBrains Mono (cifras), incluidas en `fonts/` para que funcionen sin conexión (licencia SIL OFL). El tema se elige en ⚙️ Ajustes: seguir al sistema, claro u oscuro.
+
 ## Probarla en local
 
 ```bash
