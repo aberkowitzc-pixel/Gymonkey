@@ -43,7 +43,7 @@ async function run() {
     weekTick();
   };
   try {
-    const r = await callAI('review', { context: wctx, profile: aiProfile(), plan: planBrief(), history: trainingSummary() }, { signal: abort.signal, onProgress });
+    const r = await callAI('review', { context: wctx, profile: aiProfile(), plan: planBrief(), history: trainingSummary(), known_loads: ctx.knownLoads() }, { signal: abort.signal, onProgress });
     const { valid, dropped } = validateActions(r.actions, wctx);
     Object.assign(wk, { data: r, valid, dropped, selected: valid.map(() => true), lastRun: null });
   } catch (e) {

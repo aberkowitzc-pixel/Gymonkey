@@ -6,7 +6,8 @@
 
 import * as cloud from './cloud.js';
 import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, onContextFile, onContextInput, planTick, planTrainBanner, planBusy, planResume, planWeekLabel, weekInfo, todayName, WEEKDAYS } from './plan.js';
-import { suggestLoad, suggestedReps, inferRange, parseRange } from './progression.js';
+import { suggestLoad, suggestedReps, inferRange, parseRange, knownLoads } from './progression.js';
+import { initLoads, viewLoads, loadsActive, loadsBusy, loadsTick, loadsLeave, loadsActions, onLoadsInput } from './loads.js';
 import { buildWeeks, shortName, isoLocal } from './calendar.js';
 import { buildWeekContext, hasDeficit, moveOptions, setMove, adjustmentsFor, pruneSchedule } from './weekplan.js';
 import { initWeek, viewWeek, weekActive, weekBusy, weekTick, weekLeave, weekActions, onWeekChange } from './week.js';
@@ -171,8 +172,12 @@ function newEntry(exerciseId, target, { deload = false } = {}) {
   // Carga y repeticiones de hoy por doble progresión (no aplica a ejercicios por tiempo).
   // Sin objetivo del plan, el rango se deduce de lo que hiciste la última vez.
   const history = historyFor(exerciseId);
+  const exo = exById(exerciseId);
+  // La carga prescrita por el plan (o la estimada y guardada en el ejercicio) es el punto de partida sin historial.
+  const startLoad = tg?.startLoad > 0 ? tg.startLoad : (exo?.startLoad || 0);
+  const startBasis = (tg?.startLoad > 0 ? tg.startBasis : exo?.startBasis) || tg?.startBasis || exo?.startBasis || '';
   const suggestion = timed ? null : suggestLoad({
-    name: exName(exerciseId), reps: tg?.reps || inferRange(history[0]?.sets), history, startLoad: tg?.startLoad || 0, deload,
+    name: exName(exerciseId), reps: tg?.reps || inferRange(history[0]?.sets), history, startLoad, startBasis, deload,
   });
   const [tLo, tHi] = parseRange(tg?.reps);
   const sets = Array.from({ length: count }, (_, i) => {
@@ -424,7 +429,7 @@ function updateMedia(info) {
 
 let wakeLock = null;
 async function syncWakeLock() {
-  const want = state.settings.wakeLock && (!!state.active || planBusy() || sessionsBusy() || weekBusy()) && !document.hidden && 'wakeLock' in navigator;
+  const want = state.settings.wakeLock && (!!state.active || planBusy() || sessionsBusy() || weekBusy() || loadsBusy()) && !document.hidden && 'wakeLock' in navigator;
   try {
     if (want && !wakeLock) {
       wakeLock = await navigator.wakeLock.request('screen');
@@ -514,6 +519,7 @@ function tick() {
   planTick();
   sessionsTick();
   weekTick();
+  loadsTick();
 }
 
 /* ---------- vistas ---------- */
@@ -523,7 +529,7 @@ function render() {
   const views = { train: viewTrain, plan: viewPlan, routines: viewRoutines, history: viewHistory, progress: viewProgress };
   renderAccount();
   try {
-    $view.innerHTML = weekActive() ? viewWeek() : sessionsActive() ? viewSessions() : views[tab]();
+    $view.innerHTML = loadsActive() ? viewLoads() : weekActive() ? viewWeek() : sessionsActive() ? viewSessions() : views[tab]();
   } catch (e) {
     console.error('Error al pintar la pantalla', e);
     $view.innerHTML = '<div class="card error"><p>No se pudo mostrar esta pantalla.</p><button class="primary" data-action="reload">Recargar la app</button></div>';
@@ -534,7 +540,7 @@ function render() {
   syncWakeLock();
 }
 
-const KIND = { up: '↑ sube', hold: '= mantén', down: '↓ baja', deload: '↓ descarga', break: '↺ vuelta', start: 'inicio', calibrate: '' };
+const KIND = { up: '↑ sube', hold: '= mantén', down: '↓ baja', deload: '↓ descarga', break: '↺ vuelta', start: '≈ estimada', calibrate: '', bodyweight: '' };
 
 /** Objetivo del plan en una línea; las notas de técnica solo aparecen al tocar. */
 function targetHTML(tg, timed) {
@@ -556,8 +562,9 @@ function suggestHTML(sg, exerciseId) {
     if (cand) hint = `<div class="link-hint">¿Es <b>${esc(cand.name)}</b>? <button class="small" data-action="merge-into" data-from="${cand.id}" data-to="${exerciseId}">Sí, unir</button></div>`;
   }
   const main = sg.weight != null ? `${fmtKg(sg.weight)} kg × ${suggestedReps(sg, 0)}`
-    : sg.kind === 'calibrate' ? 'Calibra el peso' : `Apunta a ${suggestedReps(sg, 0)} reps`;
-  return `<details class="suggest ${sg.kind}"><summary><b>💡 ${main}</b>${KIND[sg.kind] ? `<span class="kind">${KIND[sg.kind]}</span>` : ''}</summary>${sg.lastText ? `<small>Última vez: ${esc(sg.lastText)}</small>` : ''}<small>${esc(sg.note)}</small></details>${hint}`;
+    : sg.kind === 'calibrate' ? 'Calibra el peso' : sg.kind === 'bodyweight' ? `Peso corporal × ${suggestedReps(sg, 0)}` : `Apunta a ${suggestedReps(sg, 0)} reps`;
+  const tag = sg.kind === 'start' && sg.basis === 'marca' ? 'tus marcas' : KIND[sg.kind];
+  return `<details class="suggest ${sg.kind}"><summary><b>💡 ${main}</b>${tag ? `<span class="kind">${tag}</span>` : ''}</summary>${sg.lastText ? `<small>Última vez: ${esc(sg.lastText)}</small>` : ''}<small>${esc(sg.note)}</small></details>${hint}`;
 }
 
 /** Hoy + esta semana y la próxima: qué toca, qué hiciste y qué falta. */
@@ -601,7 +608,7 @@ function applyAdjustments(r) {
     } else {
       let ex = matchExercise(x.exercise, state.exercises)?.exercise;
       if (!ex) { ex = { id: uid(), name: x.exercise.trim(), muscle: x.muscle_group || 'Otros', type: x.exercise_type === 'time' ? 'time' : 'reps' }; state.exercises.push(ex); }
-      const entry = newEntry(ex.id, { sets: x.sets, reps: x.reps, rir: x.rir, rest: x.rest_seconds, notes: x.reason });
+      const entry = newEntry(ex.id, { sets: x.sets, reps: x.reps, rir: x.rir, rest: x.rest_seconds, notes: x.reason, startLoad: x.start_load_kg || 0, startBasis: 'estimado' });
       entry.adj = 'Añadido';
       a.entries.push(entry);
     }
@@ -681,8 +688,10 @@ function viewTrain() {
       </button>`).join('');
     const weekAgo = Date.now() - 7 * 864e5;
     const thisWeek = state.workouts.filter((w) => w.start >= weekAgo).length;
+    const missing = missingLoads().length;
     return `
       ${planTrainBanner()}
+      ${missing ? loadsBanner(missing) : ''}
       ${cal}
       <div class="actions2">
         <button class="primary" data-action="start">+ Entreno vacío</button>
@@ -749,6 +758,7 @@ function viewTrain() {
         <button class="primary" data-action="finish">Terminar</button>
       </div>
     </div>
+    ${a.entries.some((e) => e.suggest?.kind === 'calibrate') ? loadsBanner(a.entries.filter((e) => e.suggest?.kind === 'calibrate').length) : ''}
     ${entries || '<div class="empty"><div class="big">💪</div>Añade tu primer ejercicio</div>'}
     <div class="actions2">
       <button data-action="add-exercise">+ Ejercicio</button>
@@ -1021,6 +1031,47 @@ function workoutFromActive(a, { typed, sugs }) {
   });
   return { id: uid(), name: a.name, start: a.start, end: Date.now(), entries, routineId: a.routineId, skipped, partial: skipped.length > 0 || got < planned, ...(a.remainderOf ? { remainderOf: a.remainderOf } : {}) };
 }
+
+/** Ejercicios de las rutinas de tu plan (y del entreno en curso) que no tienen carga de partida ni historial. */
+function missingLoads() {
+  const out = new Map();
+  const consider = (id, tg, routine) => {
+    const ex = exById(id);
+    if (!ex || ex.type === 'time' || out.has(id)) return;
+    if (tg?.startLoad > 0 || ex.startLoad > 0) return;
+    if ((tg?.startBasis || ex.startBasis) === 'peso_corporal') return;
+    if (historyFor(id, 1).length) return;
+    out.set(id, { exerciseId: id, name: ex.name, muscle: ex.muscle, type: ex.type, sets: tg?.sets || 3, reps: tg?.reps || '8-12', rir: tg?.rir || '2', routine });
+  };
+  state.routines.filter((r) => r.fromPlan).forEach((r) => r.exerciseIds.forEach((id) => consider(id, r.targets?.[id], r.name)));
+  state.active?.entries.forEach((e) => consider(e.exerciseId, e.target, state.active.name));
+  return [...out.values()];
+}
+
+/** Guarda la carga de partida de un ejercicio: en el ejercicio, en las rutinas, en el plan y en el entreno en curso. */
+function applyLoad(exId, kg, basis) {
+  const ex = exById(exId);
+  if (!ex) return;
+  ex.startLoad = kg;
+  ex.startBasis = basis;
+  state.routines.forEach((r) => {
+    const t = r.targets?.[exId];
+    if (t && !(t.startLoad > 0)) { t.startLoad = kg; t.startBasis = basis; }
+  });
+  state.plan?.mesocycles.forEach((m) => m.days.forEach((d) => d.exercises.forEach((x) => {
+    if (!(x.start_load_kg > 0) && matchExercise(x.name, [ex])) { x.start_load_kg = kg; x.load_basis = basis; }
+  })));
+  if (state.active) {
+    state.active.entries = state.active.entries.map((e) => {
+      if (e.exerciseId !== exId || e.sets.some((s) => s.done)) return e;
+      const fresh = newEntry(exId, e.target);
+      ['group', 'adj', 'adjSets', 'rest'].forEach((k) => { if (e[k] != null) fresh[k] = e[k]; });
+      return fresh;
+    });
+  }
+}
+
+const loadsBanner = (n) => `<div class="card loadsb"><div class="row between"><span><b>Faltan cargas de partida</b> <span class="muted">· ${n} ejercicio${n > 1 ? 's' : ''}</span></span><button class="small primary" data-action="loads-estimate">Estimar con IA</button></div></div>`;
 
 function confirmMerge(fromId, toId) {
   const f = exById(fromId), t = exById(toId);
@@ -1415,7 +1466,7 @@ document.addEventListener('click', (ev) => {
   const tabBtn = ev.target.closest('[data-tab]');
   if (tabBtn) {
     const go = () => { tab = tabBtn.dataset.tab; render(); window.scrollTo(0, 0); };
-    if (weekActive()) weekLeave(go); else if (sessionsActive()) sessionsLeave(go); else go();
+    if (loadsActive()) loadsLeave(go); else if (weekActive()) weekLeave(go); else if (sessionsActive()) sessionsLeave(go); else go();
     return;
   }
   const el = ev.target.closest('[data-action]');
@@ -1474,6 +1525,7 @@ document.addEventListener('submit', (ev) => {
 document.addEventListener('input', (ev) => {
   const el = ev.target;
   if (el.dataset.edit) { onPlanInput(el); return; }
+  if (el.dataset.ld !== undefined) { onLoadsInput(el); return; }
   if (el.dataset.ctxdoc !== undefined) { onContextInput(el); return; }
   if (el.dataset.svtext !== undefined || el.dataset.sv !== undefined) { onSessionsInput(el); return; }
   if (!el.dataset.field || !state.active) return;
@@ -1607,7 +1659,7 @@ function renderAccount() {
     ${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">` : initial}</button>`;
 }
 
-Object.assign(actions, planActions, sessionsActions, weekActions, {
+Object.assign(actions, planActions, sessionsActions, weekActions, loadsActions, {
   reload() { location.reload(); return false; },
   'sign-in'() {
     cloud.signIn().catch((e) => toast(`No se pudo iniciar sesión: ${e.message}`));
@@ -1656,10 +1708,19 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
+initLoads({
+  state: () => state,
+  esc, ask, toast, fmtSecs, render, commit,
+  missing: missingLoads,
+  knownLoads: () => knownLoads(state.workouts, state.exercises),
+  applyLoad,
+});
+
 initWeek({
   state: () => state,
   uid, esc, ask, toast, fmtSecs, render, commit,
   weekContext: weekCtx,
+  knownLoads: () => knownLoads(state.workouts, state.exercises),
 });
 
 initSessions({

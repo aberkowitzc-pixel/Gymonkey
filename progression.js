@@ -37,18 +37,26 @@ function roundLoad(w) {
  * @param {string} p.name       nombre del ejercicio
  * @param {string} p.reps       rango objetivo, p. ej. "6-8" (si falta, 8-12)
  * @param {Array}  p.history    sesiones previas, la más reciente primero: [{ t, sets: [{ w, r }] }]
- * @param {number} [p.startLoad] peso inicial sugerido por el plan (0 = sin dato)
+ * @param {number} [p.startLoad] carga de partida prescrita por el plan (0 = sin dato)
+ * @param {string} [p.startBasis] de dónde sale: 'marca' (tus marcas), 'estimado' o 'peso_corporal'
  * @param {boolean} [p.deload]  semana de descarga
  * @param {number} [p.now]
  * @returns {{ weight: number|null, kind: string, note: string, lastText?: string }}
  */
-export function suggestLoad({ name, reps, history = [], startLoad = 0, deload = false, now = Date.now() }) {
+export function suggestLoad({ name, reps, history = [], startLoad = 0, startBasis = '', deload = false, now = Date.now() }) {
   const [lo, hi] = parseRange(reps);
   const last = history.find((h) => h.sets.some((s) => num(s.r) > 0));
 
   if (!last) {
     if (startLoad > 0) {
-      return { weight: roundLoad(startLoad), kind: 'start', lo, hi, lastReps: [], note: `Punto de partida según tus marcas de referencia. Ajusta para llegar a ${lo}-${hi} reps dejando 2-3 en reserva.` };
+      const note = startBasis === 'marca'
+        ? `Parte de tus marcas. Ajusta si no llegas a ${lo}-${hi} reps con 2 en reserva; después la app la actualiza.`
+        : `Carga estimada para empezar. Ajústala hasta llegar a ${lo}-${hi} reps con 2 en reserva; después la app la actualiza.`;
+      return { weight: roundLoad(startLoad), kind: 'start', basis: startBasis || 'estimado', lo, hi, lastReps: [], note };
+    }
+    // Ejercicio con el propio peso corporal: no lleva kilos, se progresa en repeticiones.
+    if (startBasis === 'peso_corporal') {
+      return { weight: null, kind: 'bodyweight', lo, hi, lastReps: [], note: `Con tu propio peso: apunta a ${lo}-${hi} repeticiones con 2 en reserva. Al llegar a ${hi} en todas las series, añade lastre o una variante más difícil.` };
     }
     return { weight: null, kind: 'calibrate', lo, hi, lastReps: [], note: `Primera vez: elige un peso con el que completes ${lo}-${hi} reps dejando 2-3 en reserva. Desde la próxima sesión la app te propone la carga.` };
   }
@@ -113,6 +121,33 @@ export function suggestLoad({ name, reps, history = [], startLoad = 0, deload = 
  *  · Sube el peso, baja, descarga o primera vez → el mínimo del rango (con más peso se hacen menos repeticiones).
  *  · Vuelta tras una pausa → lo que hacías, dentro del rango.
  */
+/**
+ * Cargas reales de la persona (las de su última sesión de cada ejercicio, de lo más reciente a lo más antiguo),
+ * con el 1RM estimado (Epley). Sirven para que la IA estime las de ejercicios nuevos.
+ */
+export function knownLoads(workouts, exercises, { max = 40 } = {}) {
+  const seen = new Map();
+  for (let i = workouts.length - 1; i >= 0 && seen.size < max; i--) {
+    const w = workouts[i];
+    for (const e of w.entries) {
+      if (seen.has(e.exerciseId)) continue;
+      const ex = exercises.find((x) => x.id === e.exerciseId);
+      if (!ex || ex.type === 'time') continue;
+      const sets = e.sets.filter((s) => s.done !== false && num(s.r) > 0 && num(s.w) > 0);
+      if (!sets.length) continue;
+      const d = new Date(w.start);
+      seen.set(e.exerciseId, {
+        exercise: ex.name,
+        muscle: ex.muscle,
+        date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+        sets: sets.map((s) => `${fmt(num(s.w))}×${num(s.r)}`).join(', '),
+        e1rm_kg: Math.round(Math.max(...sets.map((s) => num(s.w) * (1 + num(s.r) / 30))) * 2) / 2,
+      });
+    }
+  }
+  return [...seen.values()];
+}
+
 export function suggestedReps(s, i = 0) {
   if (!s) return null;
   const { kind, lo, hi, lastReps = [] } = s;

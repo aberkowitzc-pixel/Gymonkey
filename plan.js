@@ -4,6 +4,7 @@
 import { DEMO_AI } from './config.js';
 import { MAX_DOC, PROMPT_OTRA_IA, buildExport } from './context.js';
 import { matchExercise, addAlias } from './exercises.js';
+import { knownLoads } from './progression.js';
 
 export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const GOALS = [
@@ -244,7 +245,10 @@ function applyMeso(mi) {
     d.exercises.filter((x) => x.name?.trim()).forEach((x) => {
       const ex = findOrCreateExercise(x);
       exerciseIds.push(ex.id);
-      targets[ex.id] = { sets: x.sets, reps: x.reps, rir: x.rir, rest: x.rest_seconds, notes: x.notes, startLoad: x.start_load_kg || 0 };
+      targets[ex.id] = { sets: x.sets, reps: x.reps, rir: x.rir, rest: x.rest_seconds, notes: x.notes, startLoad: x.start_load_kg || 0, startBasis: x.load_basis || '' };
+      // La carga prescrita también queda en el ejercicio, para que cualquier rutina que lo use la aproveche.
+      if (!(ex.startLoad > 0) && x.start_load_kg > 0) { ex.startLoad = x.start_load_kg; ex.startBasis = x.load_basis || 'estimado'; }
+      else if (!ex.startBasis && x.load_basis === 'peso_corporal') ex.startBasis = 'peso_corporal';
     });
     st.routines.push({ id: ctx.uid(), name: d.name, exerciseIds, targets, fromPlan: true, weekday: d.weekday, planDay: { meso: mi, day: di } });
   });
@@ -351,9 +355,10 @@ function formView() {
         ${chips('equipment', EQUIPMENT, p.equipment || EQUIPMENT)}
       </fieldset>
       <div class="grid2">
+        <label class="field">Peso corporal (kg)<input name="bodyweight_kg" inputmode="decimal" placeholder="Para estimar cargas" value="${esc(p.bodyweight_kg || '')}"></label>
         <label class="field">Edad (opcional)<input name="age" inputmode="numeric" value="${esc(p.age || '')}"></label>
-        <label class="field">Sexo (opcional)<select name="sex">${options([['', 'Prefiero no decirlo'], ['Mujer', 'Mujer'], ['Hombre', 'Hombre']], p.sex || '')}</select></label>
       </div>
+      <label class="field">Sexo (opcional)<select name="sex">${options([['', 'Prefiero no decirlo'], ['Mujer', 'Mujer'], ['Hombre', 'Hombre']], p.sex || '')}</select></label>
       <label class="field">Tus marcas actuales (opcional)<textarea name="reference_lifts" rows="2" placeholder="Press banca 60 kg × 8, sentadilla 80 kg × 6">${esc(p.reference_lifts || '')}</textarea></label>
       <label class="field">Lesiones, molestias o limitaciones<textarea name="injuries" rows="2" placeholder="Ej.: dolor lumbar ocasional">${esc(p.injuries || '')}</textarea></label>
       <label class="field">Músculos o aspectos a priorizar<textarea name="priorities" rows="2" placeholder="Ej.: glúteos, espalda">${esc(p.priorities || '')}</textarea></label>
@@ -381,13 +386,21 @@ function questionsView() {
     </form>`;
 }
 
+/** Carga prescrita de un ejercicio del plan: "≈ 40 kg" (estimada), "60 kg" (de tus marcas), "peso corp." o "—" (sin dato). */
+function loadCell(x) {
+  if (x.start_load_kg > 0) return `${x.load_basis === 'marca' ? '' : '≈ '}${Math.round(x.start_load_kg * 10) / 10} kg`.replace('.', ',');
+  if (x.load_basis === 'peso_corporal' || x.type === 'time') return 'peso corp.';
+  return '—';
+}
+
 function exerciseTable(d) {
   return `<table class="plan-table">
-    <thead><tr><th>Ejercicio</th><th>Series</th><th>RIR</th><th>Desc.</th></tr></thead>
+    <thead><tr><th>Ejercicio</th><th>Series</th><th>Carga</th><th>RIR</th><th>Desc.</th></tr></thead>
     <tbody>${d.exercises.map((x) => `
       <tr>
         <td><b>${esc(x.name)}</b>${x.notes ? `<small>${esc(x.notes)}</small>` : ''}${x.alternatives?.length ? `<small class="alt">Alternativas: ${esc(x.alternatives.join(', '))}</small>` : ''}</td>
         <td>${x.sets}×${esc(x.reps)}${x.type === 'time' ? ' s' : ''}</td>
+        <td>${loadCell(x)}</td>
         <td>${esc(x.rir)}</td>
         <td>${ctx.fmtSecs(x.rest_seconds)}</td>
       </tr>`).join('')}</tbody>
@@ -498,12 +511,13 @@ function editView() {
           <label class="field">Día de la semana<select data-edit="d.${mi}.${di}.weekday">${wd(d.weekday)}</select></label>
         </div>
         <table class="edit-table">
-          <thead><tr><th>Ejercicio</th><th>Series</th><th>Reps</th><th>RIR</th><th>Desc. (s)</th><th></th></tr></thead>
+          <thead><tr><th>Ejercicio</th><th>Series</th><th>Reps</th><th>Kg</th><th>RIR</th><th>Desc. (s)</th><th></th></tr></thead>
           <tbody>${d.exercises.map((x, xi) => `
             <tr>
               <td><input list="ex-library" data-edit="x.${mi}.${di}.${xi}.name" value="${esc(x.name)}" aria-label="Ejercicio"></td>
               <td><input inputmode="numeric" data-edit="x.${mi}.${di}.${xi}.sets" value="${x.sets}" aria-label="Series"></td>
               <td><input data-edit="x.${mi}.${di}.${xi}.reps" value="${esc(x.reps)}" aria-label="Repeticiones"></td>
+              <td><input inputmode="decimal" data-edit="x.${mi}.${di}.${xi}.start_load_kg" value="${x.start_load_kg || ''}" placeholder="kg" aria-label="Carga en kg"></td>
               <td><input data-edit="x.${mi}.${di}.${xi}.rir" value="${esc(x.rir)}" aria-label="RIR"></td>
               <td><input inputmode="numeric" data-edit="x.${mi}.${di}.${xi}.rest_seconds" value="${x.rest_seconds}" aria-label="Descanso en segundos"></td>
               <td><button class="ghost danger" data-action="plan-edit-del-ex" data-m="${mi}" data-d="${di}" data-x="${xi}" aria-label="Quitar ejercicio">✕</button></td>
@@ -528,7 +542,7 @@ export function onPlanSubmit(form) {
       days: WEEKDAYS.filter((d) => fd.getAll('days').includes(d)),
       minutes: +fd.get('minutes'), weeks: +fd.get('weeks'),
       equipment: fd.getAll('equipment'),
-      age: fd.get('age').trim(), sex: fd.get('sex'), reference_lifts: fd.get('reference_lifts').trim(),
+      age: fd.get('age').trim(), sex: fd.get('sex'), bodyweight_kg: fd.get('bodyweight_kg').trim(), reference_lifts: fd.get('reference_lifts').trim(),
       context_doc: (fd.get('context_doc') || '').trim(),
       injuries: fd.get('injuries').trim(), priorities: fd.get('priorities').trim(), preferences: fd.get('preferences').trim(),
     };
@@ -539,7 +553,7 @@ export function onPlanSubmit(form) {
     if (profile.context_doc.length > MAX_DOC) { ui.error = `El documento adjunto supera los ${MAX_DOC.toLocaleString('es')} caracteres. Resume lo más importante y vuelve a intentarlo.`; ctx.render(); return; }
     ui.draft = {};
     runAI('Pensando qué preguntarte…', async (o) => {
-      ui.questions = await callAI('questions', { profile: aiProfile(), context_doc: profileDoc() }, o);
+      ui.questions = await callAI('questions', { profile: aiProfile(), context_doc: profileDoc(), known_loads: knownLoads(S().workouts, S().exercises) }, o);
       ui.step = 'questions';
     });
   } else if (form.dataset.form === 'plan-questions') {
@@ -549,7 +563,7 @@ export function onPlanSubmit(form) {
     }));
     ui.draft = Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === 'string'));
     runAI('Diseñando tu plan por mesociclos…', async (o) => {
-      const r = await callAI('generate', { profile: aiProfile(), answers, library: library(), today: todayISO(), context_doc: profileDoc() }, o);
+      const r = await callAI('generate', { profile: aiProfile(), answers, library: library(), today: todayISO(), context_doc: profileDoc(), known_loads: knownLoads(S().workouts, S().exercises) }, o);
       setPlan(r.plan, r.message, [], false);
       ui.step = null;
       ctx.toast('¡Tu plan está listo!');
@@ -565,6 +579,14 @@ export function onPlanInput(el) {
   const [mi, di, xi] = idx.map(Number);
   const target = kind === 'm' ? p.mesocycles[mi] : kind === 'd' ? p.mesocycles[mi].days[di] : p.mesocycles[mi].days[di].exercises[xi];
   const ints = ['sets', 'rest_seconds', 'weeks'];
+  if (field === 'start_load_kg') {
+    // Una carga escrita a mano es una marca tuya.
+    const n = parseFloat(String(el.value).replace(',', '.'));
+    target.start_load_kg = Number.isFinite(n) && n > 0 ? n : 0;
+    if (target.start_load_kg > 0) target.load_basis = 'marca';
+    else if (target.load_basis === 'marca') target.load_basis = 'estimado';
+    return;
+  }
   target[field] = ints.includes(field) ? Math.max(0, parseInt(el.value, 10) || 0) : el.value;
   if (kind === 'x' && field === 'name') {
     const ex = S().exercises.find((e) => norm(e.name) === norm(el.value));
@@ -720,7 +742,7 @@ export const planActions = {
       runAI('Adaptando tu plan…', async (o) => {
         const r = await callAI('adapt', {
           profile: aiProfile(), plan: planForAI(plan), currentWeek: weekInfo(plan).week,
-          history: trainingSummary(), library: library(), today: todayISO(), context_doc: doc,
+          history: trainingSummary(), library: library(), today: todayISO(), context_doc: doc, known_loads: knownLoads(S().workouts, S().exercises),
           feedback: { options: opts, days: daysChanged ? days : [], minutes: minutesChanged ? minutes : null, text },
         }, o);
         setPlan(r.plan, r.message, r.changes, true);
@@ -733,7 +755,7 @@ export const planActions = {
   'plan-edit-cancel'() { ui.editing = null; },
   'plan-edit-add-ex'(_, el) {
     ui.editing.mesocycles[+el.dataset.m].days[+el.dataset.d].exercises.push({
-      name: '', muscle_group: 'Otros', type: 'reps', sets: 3, reps: '8-12', rir: '2', rest_seconds: 90, start_load_kg: 0, notes: '', alternatives: [],
+      name: '', muscle_group: 'Otros', type: 'reps', sets: 3, reps: '8-12', rir: '2', rest_seconds: 90, start_load_kg: 0, load_basis: 'estimado', notes: '', alternatives: [],
     });
   },
   'plan-edit-del-ex'(_, el) { ui.editing.mesocycles[+el.dataset.m].days[+el.dataset.d].exercises.splice(+el.dataset.x, 1); },

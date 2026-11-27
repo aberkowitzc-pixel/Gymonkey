@@ -413,3 +413,15 @@ button.link { text-align: left; }
 
 .pick-list input[type="radio"] { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
 .pick-list > small { display: block; margin-top: 8px; }
+
+/* ---------- v10: cargas de partida ---------- */
+.ld-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 0; }
+.ld-row + .ld-row { border-top: 1px solid var(--line); padding-top: 12px; }
+.ld-name { min-width: 0; flex: 1; }
+.ld-name small { display: block; font-size: 0.8rem; color: var(--muted); }
+.ld-in { display: flex; align-items: center; gap: 6px; flex: none; }
+.ld-in input { width: 74px; text-align: center; padding: 8px 4px; }
+.plan-table td:nth-child(3) { font-weight: 600; }
+details.suggest.bodyweight { background: var(--accent-soft); }
+
+.loadsb { border-color: #f59e0b; }

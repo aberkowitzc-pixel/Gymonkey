@@ -123,3 +123,44 @@ test('si la última sesión quedó incompleta no sube el peso: repite y completa
   assert.equal(partial.weight, 60);
   assert.match(partial.note, /no terminaste todas las series/);
 });
+
+import { knownLoads } from '../progression.js';
+
+test('sin historial, la carga prescrita por el plan se propone como punto de partida, con su base', () => {
+  const est = suggestLoad({ name: 'Landmine press', reps: '8-10', history: [], startLoad: 20, startBasis: 'estimado', now: NOW });
+  assert.equal(est.kind, 'start');
+  assert.equal(est.weight, 20);
+  assert.equal(est.basis, 'estimado');
+  assert.match(est.note, /Carga estimada para empezar/);
+  const marca = suggestLoad({ name: 'Press de banca', reps: '6-8', history: [], startLoad: 60, startBasis: 'marca', now: NOW });
+  assert.equal(marca.basis, 'marca');
+  assert.match(marca.note, /Parte de tus marcas/);
+});
+
+test('con historial manda la progresión, no la carga del plan', () => {
+  const s = suggestLoad({ name: 'Press de banca', reps: '6-8', history: [sess(7, [[60, 8], [60, 8], [60, 8]])], startLoad: 40, startBasis: 'estimado', now: NOW });
+  assert.equal(s.kind, 'up');
+  assert.equal(s.weight, 62.5);
+});
+
+test('ejercicios con el propio peso: sin kilos, se progresa en repeticiones', () => {
+  const s = suggestLoad({ name: 'Dominadas', reps: '6-10', history: [], startLoad: 0, startBasis: 'peso_corporal', now: NOW });
+  assert.equal(s.kind, 'bodyweight');
+  assert.equal(s.weight, null);
+  assert.match(s.note, /propio peso/);
+  const none = suggestLoad({ name: 'Dominadas', reps: '6-10', history: [], now: NOW });
+  assert.equal(none.kind, 'calibrate');      // sin dato alguno, sigue pidiendo calibrar
+});
+
+test('cargas conocidas: la última sesión de cada ejercicio con su 1RM estimado', () => {
+  const ex = [{ id: 'pb', name: 'Press de banca', muscle: 'Pecho' }, { id: 'pl', name: 'Plancha', muscle: 'Core', type: 'time' }, { id: 'dm', name: 'Dominadas', muscle: 'Espalda' }];
+  const w = (iso, entries) => ({ start: new Date(`${iso}T18:00:00`).getTime(), entries });
+  const done = (wt, r) => ({ w: String(wt), r: String(r), done: true });
+  const out = knownLoads([
+    w('2026-11-10', [{ exerciseId: 'pb', sets: [done(55, 8)] }]),
+    w('2026-11-20', [{ exerciseId: 'pb', sets: [done(60, 8), done(60, 7)] }, { exerciseId: 'pl', sets: [done(0, 45)] }, { exerciseId: 'dm', sets: [done('', 8)] }]),
+  ], ex);
+  assert.equal(out.length, 1);                                   // plancha (tiempo) y dominadas (sin peso) no cuentan
+  assert.deepEqual(out[0], { exercise: 'Press de banca', muscle: 'Pecho', date: '2026-11-20', sets: '60×8, 60×7', e1rm_kg: 76 });
+  assert.deepEqual(knownLoads([], ex), []);
+});

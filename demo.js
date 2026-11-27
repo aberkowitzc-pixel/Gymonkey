@@ -2,6 +2,17 @@
 // a partir del cuestionario. Sirve para probar la app sin servidor ni coste.
 // No es la IA: la IA real razona sobre todo el perfil y cita la evidencia a medida.
 
+/** Cargas de ejemplo (la IA real las calcula con tus marcas y tu nivel). */
+const DEMO_LOADS = [[/sentadilla goblet/i, 20], [/sentadilla b[uú]lgara/i, 12], [/sentadilla/i, 50], [/rumano con mancuernas/i, 20], [/rumano/i, 50], [/prensa/i, 100], [/zancadas/i, 10], [/femoral/i, 30], [/hip thrust/i, 50], [/gemelos/i, 40],
+  [/press de banca/i, 40], [/inclinado/i, 14], [/press con mancuernas/i, 16], [/aperturas/i, 10], [/remo con barra/i, 40], [/remo con mancuerna/i, 18], [/remo en polea/i, 35], [/jal[oó]n/i, 40], [/press militar/i, 25], [/press de hombros/i, 12],
+  [/laterales/i, 6], [/curl/i, 10], [/tr[ií]ceps/i, 20], [/landmine/i, 20]];
+const BODYWEIGHT = /dominadas|fondos|flexiones|plancha|puente de gl[uú]teos/i;
+export function demoLoad(name, type = 'reps') {
+  if (type === 'time' || BODYWEIGHT.test(name)) return { start_load_kg: 0, load_basis: 'peso_corporal' };
+  const hit = DEMO_LOADS.find(([re]) => re.test(name));
+  return { start_load_kg: hit ? hit[1] : 20, load_basis: 'estimado' };
+}
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Simula el avance de la IA: sube poco a poco con frases como las reales. */
@@ -23,7 +34,7 @@ function exerciseBank(p) {
   const machines = has(p, 'Máquinas guiadas');
   const pullup = has(p, 'Barra de dominadas');
   const e = (name, muscle_group, sets, reps, rir, rest_seconds, notes = '', alternatives = [], type = 'reps') =>
-    ({ name, muscle_group, type, sets, reps, rir, rest_seconds, start_load_kg: 0, notes, alternatives });
+    ({ name, muscle_group, type, sets, reps, rir, rest_seconds, ...demoLoad(name, type), notes, alternatives });
   return {
     pressBanca: bar ? e('Press de banca', 'Pecho', 3, '6-8', '2', 150, 'Escápulas juntas y pies firmes.', ['Press con mancuernas']) : e('Press con mancuernas', 'Pecho', 3, '8-10', '2', 120, '', ['Flexiones lastradas']),
     pressInclinado: e('Press inclinado con mancuernas', 'Pecho', 3, '8-12', '2', 120, 'Banco a 30°.', ['Press inclinado en máquina']),
@@ -137,6 +148,13 @@ export function buildPlan(p) {
 }
 
 export async function demoAI(mode, input, onProgress) {
+  if (mode === 'loads') {
+    await fakeProgress(onProgress, ['Calculando tus cargas…', 'Estimando cargas…'], 1400);
+    return {
+      message: 'Modo demo: cargas de ejemplo. La IA real las calcula con tus marcas y tu nivel.',
+      loads: (input.exercises || []).map((x) => { const l = demoLoad(x.name, x.type); return { exercise: x.name, start_load_kg: l.start_load_kg, basis: l.load_basis, note: 'Estimada para un nivel intermedio' }; }),
+    };
+  }
   if (mode === 'review') {
     await fakeProgress(onProgress, ['Revisando tu semana…', 'Valorando qué falta…'], 1400);
     const c = input.context;

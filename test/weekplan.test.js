@@ -150,3 +150,15 @@ test('describir acciones y limpiar lo antiguo', () => {
   assert.equal(state.moves.length, 1);
   assert.equal(state.adjust.length, 1);
 });
+
+test('el ejercicio añadido por la revisión conserva su carga de partida', () => {
+  const ctx = ctxOf([]);
+  const add = { ...ACTIONS[2], start_load_kg: 18 };
+  const { valid } = validateActions([add], ctx);
+  const state = { moves: [], adjust: [] };
+  applyActions(state, valid, ctx, { uid: () => 'x' });
+  assert.equal(state.adjust[0].start_load_kg, 18);
+  const none = { moves: [], adjust: [] };
+  applyActions(none, validateActions([{ ...ACTIONS[2], start_load_kg: undefined }], ctx).valid, ctx, { uid: () => 'y' });
+  assert.equal(none.adjust[0].start_load_kg, 0);
+});

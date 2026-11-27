@@ -204,3 +204,88 @@ test('progreso de la revisión', () => {
   assert.match(reviewProgress('"kind":"move_session"').phase, /propuestas \(1\)/);
   assert.ok(reviewProgress('x'.repeat(1100)).pct > 40);
 });
+
+import { loadsResponseSchema } from '../lib/planner.js';
+import { loadsProgress } from '../lib/progress.js';
+
+test('el plan debe llevar la carga y su base en cada ejercicio', () => {
+  const ex = planSchema.properties.mesocycles.items.properties.days.items.properties.exercises.items;
+  assert.equal(ex.properties.start_load_kg.type, 'number');
+  assert.deepEqual(ex.properties.load_basis.enum, ['marca', 'estimado', 'peso_corporal']);
+  assert.ok(ex.required.includes('start_load_kg') && ex.required.includes('load_basis'));
+});
+
+test('las instrucciones del plan exigen una carga para todo ejercicio con carga externa y explican cómo estimarla', async () => {
+  const { seen, client } = capture();
+  await runPlanner(client, 'generate', { profile, today: '2026-11-27' });
+  const sys = seen.params.system;
+  assert.match(sys, /combinación de TODO: ejercicios, series, repeticiones, carga, RIR y descanso/);
+  assert.match(sys, /Nunca dejes en 0 la carga de un ejercicio con carga externa por falta de datos/);
+  assert.match(sys, /Epley/);
+  assert.match(sys, /del press de banca al press inclinado/);
+  assert.match(sys, /bodyweight_kg/);
+  assert.match(sys, /peso_corporal/);
+  assert.doesNotMatch(sys, /SOLO si la persona dio marcas/);           // la instrucción antigua que dejaba las cargas en 0
+  assert.doesNotMatch(sys, /\$\{LOAD_RULES\}/);
+});
+
+test('la IA recibe las cargas reales del historial al preguntar, generar, ajustar y revisar', async () => {
+  const known = [{ exercise: 'Sentadilla', muscle: 'Piernas', date: '2026-11-20', sets: '100×6, 100×6', e1rm_kg: 120 }];
+  for (const [mode, extra] of [['questions', {}], ['generate', {}], ['adapt', { plan: { x: 1 } }], ['review', { context: { today: '2026-11-27', days: [] } }]]) {
+    const { seen, client } = capture();
+    await runPlanner(client, mode, { profile, today: '2026-11-27', known_loads: known, ...extra });
+    const text = seen.params.messages[0].content;
+    assert.match(text, /Cargas conocidas de la persona/, mode);
+    assert.match(text, /"e1rm_kg": 120/, mode);
+  }
+  const { seen, client } = capture();
+  await runPlanner(client, 'generate', { profile, today: '2026-11-27' });
+  assert.doesNotMatch(seen.params.messages[0].content, /Cargas conocidas/);        // sin historial no se añade el bloque
+});
+
+test('al generar y al ajustar se recuerda que cada ejercicio lleva su carga', async () => {
+  for (const mode of ['generate', 'adapt']) {
+    const { seen, client } = capture();
+    await runPlanner(client, mode, { profile, plan: { x: 1 }, today: '2026-11-27' });
+    assert.match(seen.params.messages[0].content, /start_load_kg/, mode);
+  }
+  const { seen, client } = capture();
+  await runPlanner(client, 'questions', { profile, today: '2026-11-27' });
+  assert.match(seen.params.messages[0].content, /pregunta que permita estimarlas/);
+});
+
+test('estimar cargas: modo propio, con perfil, historial y la lista de ejercicios', async () => {
+  const { seen, client } = capture();
+  const exercises = [{ name: 'Landmine press', muscle: 'Hombros', type: 'reps', sets: 3, reps: '8-10', rir: '2' }];
+  await runPlanner(client, 'loads', { profile: { bodyweight_kg: '78', experience: 'Intermedio' }, plan: { week: 'S3' }, known_loads: [{ exercise: 'Press militar', e1rm_kg: 60 }], exercises });
+  const text = seen.params.messages[0].content;
+  assert.match(text, /Landmine press/);
+  assert.match(text, /"bodyweight_kg": "78"/);
+  assert.match(text, /Press militar/);
+  assert.match(seen.params.system, /estimar la carga de partida de cada ejercicio/);
+  assert.match(seen.params.system, /Epley/);
+  assert.equal(seen.params.output_config.format.schema.properties.loads.type, 'array');
+  await assert.rejects(runPlanner(client, 'loads', { profile: {}, exercises: [] }), (e) => e instanceof PlannerError && /No hay ejercicios/.test(e.message));
+});
+
+test('el esquema de estimación de cargas es estricto', () => {
+  const walk = (s) => {
+    if (s.type === 'object') {
+      assert.equal(s.additionalProperties, false);
+      assert.deepEqual([...s.required].sort(), Object.keys(s.properties).sort());
+      Object.values(s.properties).forEach(walk);
+    } else if (s.type === 'array') walk(s.items);
+  };
+  walk(loadsResponseSchema);
+  assert.deepEqual(loadsResponseSchema.properties.loads.items.properties.basis.enum, ['marca', 'estimado', 'peso_corporal']);
+});
+
+test('la revisión de la semana también calcula la carga del ejercicio que añade', () => {
+  assert.equal(reviewResponseSchema.properties.actions.items.properties.start_load_kg.type, 'number');
+});
+
+test('progreso de la estimación de cargas', () => {
+  assert.match(loadsProgress('', { thinking: true }).phase, /Calculando/);
+  assert.match(loadsProgress('"start_load_kg": 40, "start_load_kg": 20').phase, /Estimando cargas \(2\)/);
+  assert.ok(loadsProgress('x'.repeat(1250)).pct > 40);
+});

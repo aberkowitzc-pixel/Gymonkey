@@ -161,7 +161,7 @@ export function applyActions(state, actions, ctx, { uid }) {
       state.adjust.push({
         id: uid(), week: isoLocal(mondayOf(parseISO(a.to_date))), routine: a.session, date: a.to_date, kind: a.kind,
         exercise: a.exercise, muscle_group: a.muscle_group || 'Otros', exercise_type: a.exercise_type === 'time' ? 'time' : 'reps',
-        sets: a.sets, reps: a.reps, rir: a.rir, rest_seconds: a.rest_seconds, reason: a.reason || '', consumed: false,
+        sets: a.sets, reps: a.reps, rir: a.rir, rest_seconds: a.rest_seconds, start_load_kg: Math.max(0, Number(a.start_load_kg) || 0), reason: a.reason || '', consumed: false,
       });
     }
   }
