@@ -49,6 +49,7 @@ Si lo hiciste público para GitHub Pages:
    | `ANTHROPIC_API_KEY` | tu clave `sk-ant-…` |
    | `FIREBASE_PROJECT_ID` | el projectId de Firebase |
    | `ALLOWED_EMAILS` | tu correo de Google (y los de quien quieras invitar, separados por comas). Así nadie más gasta tu saldo de IA. |
+   | `ALLOWED_EMAILS_EXTRA` | (opcional) correos invitados, separados por comas. Se suman a `ALLOWED_EMAILS`, así puedes invitar sin tocar la tuya. |
 
 5. **Deploy**. En 1–2 minutos tendrás una dirección tipo `https://gymonkey-xxxx.vercel.app`.
 6. Vuelve a Firebase → **Authentication → Configuración (Settings) → Dominios autorizados → Agregar dominio** → pega `gymonkey-xxxx.vercel.app` (sin `https://`).
