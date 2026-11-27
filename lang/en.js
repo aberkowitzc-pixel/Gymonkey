@@ -582,4 +582,8 @@ export default {
   "Ajustando tu plan…": "Adjusting your plan…",
   "Chat": "Chat",
   "Traduce mi plan al {lang}": "Translate my plan to {lang}",
+  "¿Cómo voy esta semana?": "How am I doing this week?",
+  "Tengo una molestia": "I have an ache",
+  "Quiero sesiones más cortas": "I want shorter sessions",
+  "Quiero cambiar algunos ejercicios": "I want to change some exercises",
 };

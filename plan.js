@@ -214,10 +214,22 @@ function setPlan(data, message, changes, keepProgress, lang = getLang()) {
     history: keep ? [strip(prev), ...(prev.history || [])].slice(0, 3) : [],
   };
   ui.viewMeso = null;
+  if (keep) renameSessions(prev, st.plan);
   if (keep && st.plan.appliedMeso != null) {
     applyMeso(weekInfo(st.plan).meso);
     ctx.toast(t('Plan actualizado y rutinas al día'));
   }
+}
+
+/** Si la IA renombra sesiones (p. ej. al traducir), los movimientos y ajustes que apuntan a su nombre antiguo siguen al nuevo (mismo mesociclo, mismo lugar). */
+function renameSessions(prev, next) {
+  const st = S();
+  prev.mesocycles?.forEach((m, mi) => m.days?.forEach((d, di) => {
+    const nd = next.mesocycles?.[mi]?.days?.[di];
+    if (!nd || !nd.name || nd.name === d.name || nd.weekday !== d.weekday) return;
+    (st.moves || []).forEach((x) => { if (x.name === d.name) x.name = nd.name; });
+    (st.adjust || []).forEach((x) => { if (x.routine === d.name) x.routine = nd.name; });
+  }));
 }
 
 /* ---------- aplicar el plan a las rutinas ---------- */
@@ -329,6 +341,14 @@ function bubble(m, withUndo) {
   return `<div class="bubble ${m.role === 'user' ? 'me' : 'coach'}">${m.text ? `<p>${nl2br(m.text)}</p>` : ''}${changes}${undo}</div>`;
 }
 
+/** Atajos para empezar la conversación (la persona puede escribir lo que quiera). */
+const QUICK = [
+  () => t('¿Cómo voy esta semana?'),
+  () => t('Tengo una molestia'),
+  () => t('Quiero sesiones más cortas'),
+  () => t('Quiero cambiar algunos ejercicios'),
+];
+
 function chatView() {
   const plan = S().plan;
   const msgs = S().chat || [];
@@ -353,6 +373,7 @@ function chatView() {
       ${ui.loading?.chat ? loadingCard() : ''}
       <div id="chat-end"></div>
     </div>
+    ${plan && !busy ? `<div class="chips quick">${QUICK.map((q, i) => `<button type="button" class="chip-btn" data-action="chat-quick" data-q="${i}">${esc(q())}</button>`).join('')}</div>` : ''}
     ${plan ? `<form data-form="plan-chat" class="chat-input">
       <textarea name="text" rows="1" data-chatinput placeholder="${t('Escribe a tu coach…')}" aria-label="${t('Escribe a tu coach…')}" ${busy ? 'disabled' : ''}>${esc(ui.chatDraft)}</textarea>
       <button class="primary" aria-label="${t('Enviar')}" ${busy ? 'disabled' : ''}>↑</button>
@@ -741,7 +762,8 @@ export function onContextInput(box) {
 
 export const planActions = {
   'plan-chat-toggle'() { ui.showPlan = !ui.showPlan; },
-  'chat-translate'() { sendChat(t('Traduce mi plan al {lang}', { lang: LANGS[getLang()] })); return false; },
+  'chat-translate'() { ctx.setTab('plan'); ui.showPlan = false; sendChat(t('Traduce mi plan al {lang}', { lang: LANGS[getLang()] })); return false; },
+  'chat-quick'(_, el) { if (!ui.loading) sendChat(QUICK[+el.dataset.q]()); return false; },
   'chat-no-translate'() { ui.noTranslate = true; },
   'ctx-copy-prompt'(_, el) { copyText(promptOtraIA(getLang()), el, t('Prompt copiado: pégalo en la otra IA')); return false; },
   'ctx-copy-export'(_, el) { copyText(exportMd(), el, t('Datos copiados en Markdown')); return false; },
@@ -898,9 +920,14 @@ export function planBrief() {
 
 export function planTrainBanner() {
   const plan = S().plan;
+  if (!plan) return '';
+  const tr = !ui.noTranslate && (plan.lang || 'es') !== getLang()
+    ? `<div class="card accent stack"><span>${t('Tu plan está escrito en {lang}. ¿Quieres que el coach lo traduzca?', { lang: LANGS[plan.lang || 'es'] })}</span>
+        <div class="row"><button class="primary small" data-action="chat-translate">${t('Traducir mi plan')}</button><button class="ghost small" data-action="chat-no-translate">${t('Ahora no')}</button></div></div>`
+    : '';
   const wi = weekInfo(plan);
-  if (!wi?.started || plan.appliedMeso === wi.meso) return '';
-  return `<div class="card plan-banner"><button class="primary block" data-action="plan-apply">${t('Nuevo bloque: actualizar rutinas')}</button></div>`;
+  if (!wi?.started || plan.appliedMeso === wi.meso) return tr;
+  return `${tr}<div class="card plan-banner"><button class="primary block" data-action="plan-apply">${t('Nuevo bloque: actualizar rutinas')}</button></div>`;
 }
 
 /** Etiqueta de la semana del plan que contiene la fecha dada: "S3/8 · Acumulación". */

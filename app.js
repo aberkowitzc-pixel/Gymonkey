@@ -1777,6 +1777,7 @@ initSessions({
 
 initPlan({
   state: () => state,
+  setTab: (x) => { tab = x; },
   commit, save, render, openDialog, dialogButtons, ask, esc, uid, fmtSecs, exName, fmtSet, toast,
   auth: { configured: cloud.cloudConfigured, user: cloud.currentUser, idToken: cloud.idToken },
 });

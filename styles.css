@@ -449,3 +449,6 @@ input:not([type="checkbox"]):not([type="radio"]), textarea, .rlist, .rname b, .s
 .chat-input textarea { flex: 1; resize: none; max-height: 140px; border-radius: 20px; padding: 10px 14px; }
 .chat-input button { width: 44px; height: 44px; border-radius: 50%; padding: 0; font-size: 1.2rem; flex: none; }
 .chat .ai-loading { align-self: stretch; }
+
+.chips.quick { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.chip-btn { font-size: 0.85rem; padding: 6px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--text); border: 1px solid var(--line); }

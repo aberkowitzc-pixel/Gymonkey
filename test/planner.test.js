@@ -298,5 +298,7 @@ test('chat: responde y decide si hay que cambiar el plan; sin mensaje de la pers
   assert.equal(out.action, 'update_plan');
   assert.match(seen.messages[0].content, /Tengo poco tiempo/);
   assert.match(seen.system, /English/);
+  assert.match(seen.system, /Saludos y charla ligera/);
+  assert.match(seen.system, /UNA pregunta/);
   await assert.rejects(runPlanner(client, 'chat', { chat: [{ role: 'coach', text: 'Hola' }] }), PlannerError);
 });

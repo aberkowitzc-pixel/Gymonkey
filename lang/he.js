@@ -582,4 +582,8 @@ export default {
   "Ajustando tu plan…": "מתאים את התוכנית שלך…",
   "Chat": "צ׳אט",
   "Traduce mi plan al {lang}": "תרגם את התוכנית שלי ל{lang}",
+  "¿Cómo voy esta semana?": "איך אני מתקדם השבוע?",
+  "Tengo una molestia": "יש לי כאב",
+  "Quiero sesiones más cortas": "אני רוצה אימונים קצרים יותר",
+  "Quiero cambiar algunos ejercicios": "אני רוצה להחליף כמה תרגילים",
 };
