@@ -1,5 +1,5 @@
 // Service worker: cachea los archivos de la app para que funcione sin conexión.
-const CACHE = 'gymonkey-v8';
+const CACHE = 'gymonkey-v9';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'plan.js', 'cloud.js', 'config.js', 'demo.js', 'progression.js', 'context.js', 'sessions.js', 'icon.svg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {

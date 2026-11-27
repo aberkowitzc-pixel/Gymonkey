@@ -183,7 +183,7 @@ function loadingView() {
     <h3>${esc(l.text)}</h3>
     <div class="progress" aria-hidden="true"><i id="sv-bar" style="width:${Math.round(l.shown)}%"></i></div>
     <div class="row between"><span id="sv-phase" class="phase">${esc(l.phase)}</span><b id="sv-pct" class="timer">${Math.round(l.shown)} %</b></div>
-    <p class="muted" style="margin:10px 0 0">Llevas <b id="sv-elapsed" class="timer">0:00</b>. Suele tardar menos de un minuto. Mantén esta pantalla abierta.</p>
+    <div class="row between small-line muted"><span>⏱ <b id="sv-elapsed" class="timer">0:00</b></span><span>Mantén la pantalla abierta</span></div>
     <button class="ghost block" style="margin-top:8px" data-action="sv-cancel-ai">Cancelar</button>
   </div>`;
 }
@@ -192,24 +192,24 @@ function inputView() {
   const imp = sv.kind === 'import';
   const title = imp ? 'Importar historial' : sv.target === 'active' ? 'Dictar series' : 'Registrar un entreno';
   const desc = imp
-    ? 'Pega o sube el resumen de tu otra IA (o cualquier historial con fechas). Detectaré las sesiones y las añadiré a tu historial. Las que ya tengas no se duplican.'
+    ? 'Pega o sube tu historial con fechas.'
     : sv.target === 'active'
-      ? 'Cuéntame lo que llevas hecho y lo pasaré a tu entreno en curso. Si falta algo, te lo preguntaré antes de guardar.'
-      : 'Cuéntame lo que hiciste, como se lo dirías a un amigo: ejercicios, pesos, series y repeticiones, y si alternaste algunos. Puedes decir cuándo fue ("ayer", "el lunes"). Si falta algo, te lo preguntaré antes de guardar.';
+      ? 'Cuéntame lo que llevas hecho.'
+      : 'Cuéntame qué hiciste: ejercicios, pesos y series.';
   const tools = imp
     ? `<div class="row wrap">
         <label class="file-btn"><input type="file" data-sv-file accept=".md,.markdown,.txt,.csv,.json,text/*"><span>📄 Subir archivo</span></label>
         <button type="button" class="small" data-action="ctx-copy-prompt">📋 Copiar prompt para otra IA</button>
       </div>`
     : `<div class="row"><button class="primary" id="sv-mic" data-action="sv-mic">${sv.listening ? '⏹ Parar' : '🎙️ Dictar'}</button><span class="muted" id="sv-status"></span></div>
-       <p class="muted" style="margin:0;font-size:0.8rem">${SR ? 'El dictado lo hace tu navegador (Chrome envía el audio a Google para transcribirlo). También puedes usar el micrófono de tu teclado.' : 'Tu navegador no ofrece dictado aquí: usa el micrófono de tu teclado.'}</p>`;
+       <p class="muted" style="margin:0;font-size:0.78rem">${SR ? 'Chrome envía el audio a Google para transcribirlo.' : 'Usa el micrófono de tu teclado.'}</p>`;
   return `
     <div class="card stack">
       <h2 style="margin:0">${title}</h2>
       <p class="muted" style="margin:0">${desc}</p>
       ${tools}
-      <textarea id="sv-text" data-svtext rows="${imp ? 10 : 8}" placeholder="${imp ? 'Pega aquí tu historial…' : 'Ej.: Hoy hice sentadilla 4 series de 6 con 80 kilos, alternando con landmine 3 series de 10 con 25. Después press militar 3 por 8 con 35…'}">${esc(sv.text)}</textarea>
-      <div class="ctx-count muted" data-sv-count>${sv.text.length.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')} caracteres</div>
+      <textarea id="sv-text" data-svtext rows="${imp ? 10 : 8}" placeholder="${imp ? 'Pega aquí tu historial…' : 'Ej.: hoy sentadilla 4×6 con 80, alternando con landmine 3×10 con 25…'}">${esc(sv.text)}</textarea>
+      <div class="ctx-count muted" data-sv-count>${sv.text.length.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')}</div>
       <button class="primary block" data-action="sv-parse">${imp ? 'Leer y ordenar' : 'Ordenar mi sesión'}</button>
       <button class="ghost block" data-action="sv-cancel">Cancelar</button>
     </div>`;
@@ -224,7 +224,6 @@ function reviewView() {
     const dup = isDup(s);
     const inc = incompleteOf(s);
     const sets = s.entries.reduce((t, e) => t + e.sets.length, 0);
-    const letters = [...new Set(s.entries.map((e) => e.block).filter(Boolean))];
     return `
       <details class="card sess" ${many ? '' : 'open'}>
         <summary>
@@ -250,13 +249,12 @@ function reviewView() {
             </tbody></table>
             ${e.notes ? `<small class="muted">${esc(e.notes)}</small>` : ''}
           </div>`).join('') || '<p class="muted">Sin ejercicios.</p>'}
-        ${letters.length ? '<p class="muted" style="margin:6px 0 0;font-size:0.82rem">🔗 Los ejercicios con la misma letra se alternaron serie a serie.</p>' : ''}
       </details>`;
   }).join('');
 
   const questions = sv.questions.length ? `
     <div class="card accent stack">
-      <h3>Antes de guardar, necesito saber…</h3>
+      <h3>Antes de guardar…</h3>
       ${sv.questions.map((q, i) => `
         <div>
           <b>${esc(q.question)}</b>
@@ -378,7 +376,7 @@ function save() {
 function countUI(box) {
   const n = document.querySelector('[data-sv-count]');
   if (!n) return;
-  n.textContent = `${box.value.length.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')} caracteres`;
+  n.textContent = `${box.value.length.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')}`;
   n.classList.toggle('over', box.value.length > MAX_DOC);
 }
 

@@ -259,21 +259,19 @@ export function viewPlan() {
       <h3>${esc(ui.loading.text)}</h3>
       <div class="progress" aria-hidden="true"><i id="ai-bar" style="width:${Math.round(ui.loading.shown)}%"></i></div>
       <div class="row between"><span id="ai-phase" class="phase">${esc(ui.loading.phase)}</span><b id="ai-pct" class="timer">${Math.round(ui.loading.shown)} %</b></div>
-      <p class="muted" style="margin:10px 0 0">Llevas <b id="ai-elapsed" class="timer">0:00</b>. Suele tardar entre 1 y 3 minutos: la IA escribe el plan completo. <b>Mantén esta pantalla abierta</b> hasta que termine.</p>
+      <div class="row between small-line muted"><span>⏱ <b id="ai-elapsed" class="timer">0:00</b></span><span>Mantén la pantalla abierta</span></div>
       <button class="ghost block" style="margin-top:8px" data-action="plan-cancel-ai">Cancelar</button>
     </div>`;
   }
   const err = ui.error ? `<div class="card error" role="alert"><p style="margin:0 0 8px">⚠️ ${esc(ui.error)}</p>${ui.lastRun ? '<button class="primary" data-action="plan-retry">Reintentar</button>' : ''}</div>` : '';
   const login = ctx.auth.configured && !ctx.auth.user()
-    ? `<div class="card"><p>Para crear y ajustar planes con IA y guardar tus datos en la nube, inicia sesión.</p><button class="primary block" data-action="sign-in">Iniciar sesión con Google</button></div>`
+    ? `<div class="card"><button class="primary block" data-action="sign-in">Iniciar sesión con Google</button><p class="muted" style="margin:8px 0 0;text-align:center">Para usar la IA y guardar tus datos</p></div>`
     : '';
-  const demo = DEMO_AI ? '<div class="card demo-note">🧪 <b>Modo demo:</b> la IA está simulada y el plan es un ejemplo. Con el servidor configurado lo genera la IA real a tu medida.</div>' : '';
+  const demo = DEMO_AI ? '<div class="card demo-note">🧪 <b>Modo demo</b> · la IA está simulada</div>' : '';
   if (ui.step === 'form') return err + demo + login + formView();
   if (ui.step === 'questions') return err + demo + questionsView();
   if (!S().plan && !ui.editing) return err + demo + login + introView();
-  if (ui.step === 'questions') return err + questionsView();
   if (ui.editing) return err + editView();
-  if (!S().plan) return err + login + introView();
   return err + planView(S().plan);
 }
 
@@ -302,12 +300,7 @@ function introView() {
     <div class="card intro">
       <div class="big">🧠</div>
       <h2>Tu plan con IA</h2>
-      <ol>
-        <li>Rellenas un cuestionario corto: objetivo, días, tiempo, experiencia y material del gimnasio.</li>
-        <li>El entrenador IA te hace algunas preguntas para afinar.</li>
-        <li>Recibes un plan por <b>mesociclos</b> basado en evidencia científica.</li>
-        <li>Lo conviertes en tus rutinas y lo ajustas cuando cambie tu vida (días, tiempo, molestias…).</li>
-      </ol>
+      <p class="muted">Un cuestionario corto y recibes un plan por mesociclos.</p>
       <button class="primary block" data-action="plan-start">Crear mi plan</button>
     </div>`;
 }
@@ -316,26 +309,24 @@ function introView() {
 function contextBlock(value = '', open = false) {
   return `
     <details class="ctx" ${open || value ? 'open' : ''}>
-      <summary><b>📎 Ya entreno con un plan: adjúntalo</b> <span class="muted">(opcional)</span></summary>
-      <p class="muted">Sube un archivo <b>.md</b> o <b>.txt</b>, o pega el texto de tu plan actual, tus notas, tus marcas o el resumen de otra IA. El entrenador le dará continuidad en vez de empezar de cero.</p>
-      <label class="file-btn"><input type="file" data-ctx-file accept=".md,.markdown,.txt,.csv,.json,text/*"><span>📄 Subir archivo</span></label>
-      <textarea name="context_doc" data-ctxdoc rows="6" placeholder="Pega aquí tu plan, tus notas o el resultado de otra IA…">${esc(value)}</textarea>
-      <div class="ctx-count muted" data-ctx-count>${value.length.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')} caracteres</div>
+      <summary><b>📎 Adjuntar plan o notas</b></summary>
+      <div class="row wrap" style="margin-top:8px">
+        <label class="file-btn"><input type="file" data-ctx-file accept=".md,.markdown,.txt,.csv,.json,text/*"><span>📄 Archivo</span></label>
+        <button type="button" class="small" data-action="ctx-copy-prompt">📋 Prompt para otra IA</button>
+        <button type="button" class="small" data-action="ctx-copy-export">📤 Mis datos</button>
+        <button type="button" class="small" data-action="ctx-download-export">⬇️ .md</button>
+      </div>
+      <textarea name="context_doc" data-ctxdoc rows="5" placeholder="Pega aquí tu plan o notas…">${esc(value)}</textarea>
       <div class="ctx-tools">
-        <p class="muted" style="margin:0"><b>¿Ya has hablado de tu entrenamiento con otra IA</b> (ChatGPT, Gemini, Claude…)? Pídele que resuma todo lo que sabe de ti:</p>
-        <div class="row wrap">
-          <button type="button" class="small" data-action="ctx-copy-prompt">📋 Copiar prompt para otra IA</button>
-          <button type="button" class="small" data-action="ctx-copy-export">📤 Copiar mis datos de Gymonkey</button>
-          <button type="button" class="small" data-action="ctx-download-export">⬇️ Descargar .md</button>
-        </div>
-        <ol class="muted ctx-steps">
-          <li>Abre esa misma conversación con tu otra IA, la que ya tiene tu historial (cuanto más contexto tenga, mejor).</li>
-          <li>Pega el prompt y envíalo. Te devolverá un resumen en Markdown con todo lo que sabe.</li>
-          <li>Cópialo y pégalo aquí arriba (o guárdalo como .md y súbelo).</li>
-        </ol>
-        <p class="muted" style="margin:0">¿Tu plan está solo en un PDF o una foto? Adjúntalo en ese mismo mensaje.</p>
-        <p class="muted" style="margin:0">📥 ¿Su resumen incluye sesiones con fecha? Impórtalas a tu historial desde la pestaña <b>Historial</b>.</p>
-        <p class="muted" style="margin:0">🔒 Lo que adjuntes se envía a la IA para generar tu plan. No incluyas nombre, correo ni otros datos personales.</p>
+        <div class="row between small-line muted"><span>🔒 Se envía a la IA · sin datos personales</span><span data-ctx-count>${value.length.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')}</span></div>
+        <details class="how"><summary>¿Cómo funciona?</summary>
+          <ol class="muted ctx-steps">
+            <li>Abre tu otra IA en la conversación que ya tiene tu historial.</li>
+            <li>Pega el prompt y envíalo: te devolverá un resumen en Markdown.</li>
+            <li>Pégalo aquí o súbelo como .md.</li>
+          </ol>
+          <p class="muted" style="margin:6px 0 0">¿Plan en PDF o foto? Adjúntalo en ese mismo mensaje. Las sesiones con fecha se importan desde <b>Historial</b>.</p>
+        </details>
       </div>
     </details>`;
 }
@@ -359,10 +350,10 @@ function formView() {
         <label class="field">Edad (opcional)<input name="age" inputmode="numeric" value="${esc(p.age || '')}"></label>
         <label class="field">Sexo (opcional)<select name="sex">${options([['', 'Prefiero no decirlo'], ['Mujer', 'Mujer'], ['Hombre', 'Hombre']], p.sex || '')}</select></label>
       </div>
-      <label class="field">Tus marcas actuales (opcional)<textarea name="reference_lifts" rows="2" placeholder="Ej.: Press banca 60 kg × 8, Sentadilla 80 kg × 6. Con esto la app te propone pesos de partida.">${esc(p.reference_lifts || '')}</textarea></label>
-      <label class="field">Lesiones, molestias o limitaciones<textarea name="injuries" rows="2" placeholder="Ej.: dolor lumbar ocasional, hombro derecho delicado…">${esc(p.injuries || '')}</textarea></label>
-      <label class="field">Músculos o aspectos a priorizar<textarea name="priorities" rows="2" placeholder="Ej.: glúteos y espalda, mejorar la sentadilla…">${esc(p.priorities || '')}</textarea></label>
-      <label class="field">Preferencias<textarea name="preferences" rows="2" placeholder="Ejercicios que te gustan o quieres evitar, cardio, deportes que practicas…">${esc(p.preferences || '')}</textarea></label>
+      <label class="field">Tus marcas actuales (opcional)<textarea name="reference_lifts" rows="2" placeholder="Press banca 60 kg × 8, sentadilla 80 kg × 6">${esc(p.reference_lifts || '')}</textarea></label>
+      <label class="field">Lesiones, molestias o limitaciones<textarea name="injuries" rows="2" placeholder="Ej.: dolor lumbar ocasional">${esc(p.injuries || '')}</textarea></label>
+      <label class="field">Músculos o aspectos a priorizar<textarea name="priorities" rows="2" placeholder="Ej.: glúteos, espalda">${esc(p.priorities || '')}</textarea></label>
+      <label class="field">Preferencias<textarea name="preferences" rows="2" placeholder="Ejercicios que te gustan o evitas">${esc(p.preferences || '')}</textarea></label>
       ${contextBlock(p.context_doc || '')}
       <button class="primary block">Siguiente</button>
       <button type="button" class="ghost block" data-action="plan-cancel">Cancelar</button>
@@ -377,7 +368,7 @@ function questionsView() {
       ${q.questions.map((x, i) => `
         <div class="card">
           <b>${esc(x.question)}</b>
-          <p class="muted" style="margin:4px 0 8px">${esc(x.why)}</p>
+          <details class="why"><summary>¿Por qué?</summary><p class="muted" style="margin:4px 0 0">${esc(x.why)}</p></details>
           ${chips(`q_${i}`, x.options, [ui.draft[`q_${i}`]].filter(Boolean), 'radio')}
           <input name="q_${i}_other" placeholder="Otra respuesta (opcional)" value="${esc(ui.draft[`q_${i}_other`] || '')}" style="margin-top:8px">
         </div>`).join('')}
@@ -407,19 +398,15 @@ function planView(plan) {
 
   const progress = !wi.started
     ? `<div class="card accent">
-        <h3>¿Empezamos?</h3>
-        <p class="muted">${startWeek(plan) > 1
-          ? `Según lo que ya llevas hecho, entras en la <b>semana ${startWeek(plan)}</b>. Se crearán las rutinas de ese mesociclo (una por día de entreno).`
-          : 'Se crearán tus rutinas del mesociclo 1 (una por día de entreno) y empezará a contar la semana 1 desde hoy.'}</p>
-        <button class="primary block" data-action="plan-apply">Empezar el plan y crear mis rutinas</button>
+        <button class="primary block" data-action="plan-apply">Empezar el plan${startWeek(plan) > 1 ? ` · semana ${startWeek(plan)}` : ''}</button>
+        <p class="muted" style="margin:6px 0 0;text-align:center">Crea tus rutinas de entrenamiento</p>
       </div>`
     : `<div class="card">
         <div class="row between"><h3>Semana ${wi.week} de ${plan.total_weeks}</h3>${wi.wp?.deload ? '<span class="pill">Descarga</span>' : ''}</div>
         <div class="bar light"><i style="width:${pct}%"></i></div>
-        <p style="margin:8px 0 0"><b>${esc(plan.mesocycles[wi.meso].name)}</b>${wi.wp ? ` · ${esc(wi.wp.label)}` : ''}</p>
-        ${wi.wp ? `<p class="muted" style="margin:4px 0 0">${esc(wi.wp.guidance)}</p>` : ''}
-        ${wi.finished ? '<p class="muted">🎉 Has completado el plan. Crea uno nuevo o ajústalo para seguir progresando.</p>' : ''}
-        ${plan.appliedMeso !== wi.meso ? `<button class="primary block" style="margin-top:10px" data-action="plan-apply">Empieza ${esc(plan.mesocycles[wi.meso].name)}: actualizar mis rutinas</button>` : ''}
+        <p style="margin:8px 0 0"><b>${esc(plan.mesocycles[wi.meso].name)}</b>${wi.wp ? ` · ${esc(wi.wp.guidance)}` : ''}</p>
+        ${wi.finished ? '<p class="muted">🎉 Plan completado</p>' : ''}
+        ${plan.appliedMeso !== wi.meso ? `<button class="primary block" style="margin-top:10px" data-action="plan-apply">Actualizar rutinas · ${esc(plan.mesocycles[wi.meso].name)}</button>` : ''}
       </div>`;
 
   const changes = plan.lastMessage || plan.lastChanges?.length
@@ -435,15 +422,15 @@ function planView(plan) {
 
   return `
     <div class="card">
-      <h2 style="margin-top:0">${esc(plan.title)}</h2>
-      <p>${esc(plan.summary)}</p>
+      <h2 style="margin:0 0 8px">${esc(plan.title)}</h2>
       <div class="tags">
         <span class="pill">${esc(plan.split)}</span>
-        <span class="pill">${plan.days_per_week} días/semana</span>
+        <span class="pill">${plan.days_per_week} días</span>
         <span class="pill">${plan.session_minutes} min</span>
-        <span class="pill">${plan.total_weeks} semanas</span>
+        <span class="pill">${plan.total_weeks} sem</span>
+        <span class="pill">📅 ${esc(plan.schedule.map((d) => d.slice(0, 3)).join(' · '))}</span>
       </div>
-      <p class="muted" style="margin-bottom:0">📅 ${esc(plan.schedule.join(' · '))}</p>
+      <details class="how"><summary>Resumen</summary><p style="margin:6px 0 0">${esc(plan.summary)}</p></details>
     </div>
     ${changes}
     ${progress}
@@ -456,16 +443,17 @@ function planView(plan) {
     <h2 style="margin-top:20px">Mesociclos</h2>
     <div class="seg">${plan.mesocycles.map((m, i) => `<button class="${i === mi ? 'on' : ''}" data-action="plan-view-meso" data-i="${i}">${i + 1}. ${esc(m.name)}<small>${m.weeks} sem</small></button>`).join('')}</div>
     <div class="card">
-      <h3>${esc(meso.name)} · ${meso.weeks} semanas</h3>
-      <p><b>Enfoque:</b> ${esc(meso.focus)}</p>
-      <p>${esc(meso.description)}</p>
-      <p class="muted"><b>Intensidad:</b> ${esc(meso.intensity)}</p>
-      <ol class="weeks">${meso.weeks_plan.map((w) => `<li class="${w.deload ? 'deload' : ''}"><b>${esc(w.label)}</b> — ${esc(w.guidance)}</li>`).join('')}</ol>
+      <h3>${esc(meso.name)} · ${meso.weeks} sem</h3>
+      <p class="muted" style="margin:2px 0 0">${esc(meso.focus)} · ${esc(meso.intensity)}</p>
+      <details class="how"><summary>Semana a semana</summary>
+        <p style="margin:6px 0">${esc(meso.description)}</p>
+        <ol class="weeks">${meso.weeks_plan.map((w) => `<li class="${w.deload ? 'deload' : ''}"><b>${esc(w.label)}</b> — ${esc(w.guidance)}</li>`).join('')}</ol>
+      </details>
     </div>
     ${meso.days.map((d) => `
       <div class="card">
         <div class="row between"><h3>${esc(d.name)}</h3><span class="pill">${esc(d.weekday)}</span></div>
-        <p class="muted" style="margin:4px 0">${esc(d.focus)} · ~${d.estimated_minutes} min</p>
+        <p class="muted" style="margin:2px 0 4px">${esc(d.focus)} · ~${d.estimated_minutes} min</p>
         ${exerciseTable(d)}
       </div>`).join('')}
 
@@ -476,8 +464,10 @@ function planView(plan) {
       <ul>${plan.progression_rules.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
       <p><b>Calentamiento:</b> ${esc(plan.warmup)}</p>
     </details>
-    ${plan.notes?.length ? `<details class="card"><summary><b>📝 Notas</b></summary><ul>${plan.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></details>` : ''}
-    <p class="muted small-print">Plan orientativo generado por IA. No sustituye el consejo de un profesional sanitario o de un entrenador presencial; si sientes dolor, para y consulta.</p>`;
+    <details class="card"><summary><b>📝 Notas</b></summary>
+      ${plan.notes?.length ? `<ul>${plan.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+      <p class="muted small-print">Plan orientativo generado por IA. No sustituye a un profesional sanitario o a un entrenador; si sientes dolor, para y consulta.</p>
+    </details>`;
 }
 
 function editView() {
@@ -631,7 +621,7 @@ export function onContextInput(box) {
   const n = box.closest('.ctx')?.querySelector('[data-ctx-count]');
   if (!n) return;
   const len = box.value.length;
-  n.textContent = `${len.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')} caracteres`;
+  n.textContent = `${len.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')}`;
   n.classList.toggle('over', len > MAX_DOC);
 }
 
@@ -696,17 +686,16 @@ export const planActions = {
   'plan-feedback'() {
     const plan = S().plan;
     ctx.openDialog(`
-      <h2>Ajustar el plan con IA</h2>
-      <p class="muted">Marca lo que quieres cambiar y cuéntaselo al entrenador. Tendrá en cuenta la semana en la que vas y tus últimos entrenos.</p>
+      <h2>Ajustar el plan</h2>
       ${chips('opt', FEEDBACK_OPTIONS)}
       <fieldset class="field" style="margin-top:12px"><legend>Días que puedes entrenar</legend>${chips('days', WEEKDAYS, plan.schedule)}</fieldset>
       <label class="field" style="margin-top:12px">Tiempo por sesión
         <select name="minutes">${options(MINUTES.map((m) => [m, `${m} min`]), plan.session_minutes)}</select>
       </label>
-      <label class="field" style="margin-top:12px">Comentario para el entrenador
-        <textarea name="text" rows="4" placeholder="Ej.: Los jueves ya no puedo ir. Me molesta la rodilla al hacer zancadas."></textarea>
+      <label class="field" style="margin-top:12px">Comentario
+        <textarea name="text" rows="3" placeholder="Ej.: los jueves ya no puedo; me molesta la rodilla"></textarea>
       </label>
-      <div style="margin-top:12px">${contextBlock('').replace('Ya entreno con un plan: adjúntalo', 'Adjuntar un archivo o mis notas')}</div>
+      <div style="margin-top:12px">${contextBlock('')}</div>
       ${ctx.dialogButtons('Ajustar plan')}`,
     (fd) => {
       const opts = fd.getAll('opt');
@@ -782,8 +771,7 @@ export function planTrainBanner() {
   const needsUpdate = plan.appliedMeso !== wi.meso;
   return `
     <div class="card plan-banner">
-      <div class="row between"><b>Semana ${wi.week} de ${plan.total_weeks}</b>${wi.wp?.deload ? '<span class="pill">Descarga</span>' : ''}</div>
-      <div class="muted">${esc(plan.mesocycles[wi.meso].name)}${wi.wp ? ` · ${esc(wi.wp.guidance)}` : ''}</div>
-      ${needsUpdate ? `<button class="primary block" style="margin-top:8px" data-action="plan-apply">Nuevo mesociclo: actualizar rutinas</button>` : ''}
+      <div class="row between"><b>Semana ${wi.week}/${plan.total_weeks} · ${esc(plan.mesocycles[wi.meso].name)}</b>${wi.wp?.deload ? '<span class="pill">Descarga</span>' : ''}</div>
+      ${needsUpdate ? `<button class="primary block" style="margin-top:8px" data-action="plan-apply">Actualizar rutinas</button>` : ''}
     </div>`;
 }

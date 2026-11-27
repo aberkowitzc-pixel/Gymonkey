@@ -523,6 +523,25 @@ function render() {
   syncWakeLock();
 }
 
+const KIND = { up: '↑ sube', hold: '= mantén', down: '↓ baja', deload: '↓ descarga', break: '↺ vuelta', start: 'inicio', calibrate: '' };
+
+/** Objetivo del plan en una línea; las notas de técnica solo aparecen al tocar. */
+function targetHTML(tg, timed) {
+  if (!tg) return '';
+  const line = `🎯 ${tg.sets}×${esc(tg.reps)}${timed ? ' s' : ''} · RIR ${esc(tg.rir)}${tg.deload ? ' · descarga' : ''}`;
+  return tg.notes
+    ? `<details class="target tip"><summary>${line}</summary><small>${esc(tg.notes)}</small></details>`
+    : `<div class="target">${line}</div>`;
+}
+
+/** Carga sugerida en una línea; el motivo y lo de la última vez, solo al tocar. */
+function suggestHTML(sg) {
+  if (!sg) return '';
+  const main = sg.weight != null ? `${fmtKg(sg.weight)} kg × ${suggestedReps(sg, 0)}`
+    : sg.kind === 'calibrate' ? 'Calibra el peso' : `Apunta a ${suggestedReps(sg, 0)} reps`;
+  return `<details class="suggest ${sg.kind}"><summary><b>💡 ${main}</b>${KIND[sg.kind] ? `<span class="kind">${KIND[sg.kind]}</span>` : ''}</summary>${sg.lastText ? `<small>Última vez: ${esc(sg.lastText)}</small>` : ''}<small>${esc(sg.note)}</small></details>`;
+}
+
 function viewTrain() {
   const a = state.active;
   if (!a) {
@@ -531,21 +550,18 @@ function viewTrain() {
     const routines = [...state.routines].sort((x, y) => order(x) - order(y)).map((r) => `
       <button class="card block ${r.fromPlan && r.weekday === today ? 'today' : ''}" style="text-align:left" data-action="start" data-id="${r.id}">
         <div class="row between"><h3>${esc(r.name)}</h3><span class="pill">${r.fromPlan ? (r.weekday === today ? 'Hoy · ' : '') + esc(r.weekday) : `${r.exerciseIds.length} ejercicios`}</span></div>
-        <div class="muted" style="margin-top:4px">${r.exerciseIds.map((id) => esc(exName(id))).join(' · ') || 'Sin ejercicios'}</div>
+        <div class="rlist">${r.exerciseIds.map((id) => esc(exName(id))).join(' · ') || 'Sin ejercicios'}</div>
       </button>`).join('');
     const weekAgo = Date.now() - 7 * 864e5;
     const thisWeek = state.workouts.filter((w) => w.start >= weekAgo).length;
     return `
       ${planTrainBanner()}
-      <div class="stats">
-        <div class="card stat"><b>${thisWeek}</b><span class="muted">esta semana</span></div>
-        <div class="card stat"><b>${state.workouts.length}</b><span class="muted">entrenos</span></div>
-        <div class="card stat"><b>${fmtKg(state.workouts.reduce((t, w) => t + workoutVolume(w), 0) / 1000)}</b><span class="muted">toneladas</span></div>
+      <div class="actions2">
+        <button class="primary" data-action="start">+ Entreno vacío</button>
+        <button data-action="voice-open">🎙️ Dictar</button>
       </div>
-      <button class="primary block" data-action="start">+ Entreno vacío</button>
-      <button class="block" style="margin-top:8px" data-action="voice-open">🎙️ Registrar un entreno hablando</button>
-      <h2 style="margin-top:20px">Empezar desde una rutina</h2>
-      ${routines || '<p class="muted">Crea una rutina en la pestaña Rutinas o genera un plan con IA en la pestaña Plan.</p>'}`;
+      ${routines || '<p class="muted">Sin rutinas. Crea un plan en la pestaña Plan.</p>'}
+      ${state.workouts.length ? `<p class="statline"><b>${thisWeek}</b> esta semana · <b>${state.workouts.length}</b> entrenos · <b>${fmtKg(state.workouts.reduce((t, w) => t + workoutVolume(w), 0) / 1000)}</b> t</p>` : ''}`;
   }
 
   if (reorder) return viewReorder(a);
@@ -580,9 +596,9 @@ function viewTrain() {
             <button class="ghost danger" data-action="remove-entry" data-e="${ei}" aria-label="Quitar ejercicio">✕</button>
           </div>
         </div>
-        ${g ? `<div class="blockinfo">🔗 <b>Bloque ${blockLetter(a.entries, e.group)}</b> · alternas con ${g.others.map((x) => esc(exName(x.exerciseId))).join(', ')} · ${g.next ? `ahora toca: <b>${esc(exName(g.next.entry.exerciseId))}</b>, serie ${g.next.si + 1}` : 'bloque completo ✓'}</div>` : ''}
-        ${tg ? `<div class="target">🎯 ${tg.sets}×${esc(tg.reps)}${timed ? ' s' : ''} · RIR ${esc(tg.rir)}${tg.deload ? ' · descarga' : ''}${tg.notes ? `<small>${esc(tg.notes)}</small>` : ''}</div>` : ''}
-        ${e.suggest ? `<div class="suggest ${e.suggest.kind}"><b>💡 ${e.suggest.weight != null ? `Hoy: ${fmtKg(e.suggest.weight)} kg × ${suggestedReps(e.suggest, 0)}` : e.suggest.kind === 'calibrate' ? 'Calibra el peso' : `Hoy: apunta a ${suggestedReps(e.suggest, 0)} reps`}</b>${e.suggest.lastText ? `<small>Última vez: ${esc(e.suggest.lastText)}</small>` : ''}<small>${esc(e.suggest.note)}</small></div>` : ''}
+        ${g ? `<div class="blockinfo">🔗 <b>${blockLetter(a.entries, e.group)}</b> · ${g.next ? `toca <b>${esc(exName(g.next.entry.exerciseId))}</b> · serie ${g.next.si + 1}` : 'bloque completo ✓'}</div>` : ''}
+        ${targetHTML(tg, timed)}
+        ${suggestHTML(e.suggest)}
         <table class="sets">
           <thead><tr><th>#</th><th>Anterior</th><th>Kg</th><th>${timed ? 'Seg' : 'Reps'}</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
@@ -598,16 +614,19 @@ function viewTrain() {
     <div class="card row between">
       <div>
         <h3>${esc(a.name)}</h3>
-        <span class="muted">Duración: <span class="timer" id="elapsed">${fmtDuration(Date.now() - a.start)}</span></span>
+        <span class="muted timer" id="elapsed">${fmtDuration(Date.now() - a.start)}</span>
       </div>
-      <button class="primary" data-action="finish">Terminar</button>
+      <div class="row">
+        ${a.entries.length > 1 ? '<button class="icon" data-action="reorder-start" aria-label="Orden y bloques">↕️</button>' : ''}
+        <button class="primary" data-action="finish">Terminar</button>
+      </div>
     </div>
-    <p class="muted hint">Los valores en verde son sugerencias: confírmalos con ✓ o corrígelos. ▶ cronometra la serie. Al terminar una serie empieza el descanso.</p>
-    ${a.entries.length > 1 ? '<button class="small" style="margin-bottom:10px" data-action="reorder-start">↕️ Orden y bloques</button>' : ''}
     ${entries || '<div class="empty"><div class="big">💪</div>Añade tu primer ejercicio</div>'}
-    <button class="block" data-action="add-exercise">+ Añadir ejercicio</button>
-    <button class="block" style="margin-top:8px" data-action="voice-open-active">🎙️ Dictar series</button>
-    <button class="block ghost danger" style="margin-top:12px" data-action="discard">Descartar entreno</button>`;
+    <div class="actions2">
+      <button data-action="add-exercise">+ Ejercicio</button>
+      <button data-action="voice-open-active">🎙️ Dictar</button>
+    </div>
+    <button class="ghost danger small center" data-action="discard">Descartar entreno</button>`;
 }
 
 function viewReorder(a) {
@@ -628,7 +647,7 @@ function viewReorder(a) {
       <h3>Orden y bloques</h3>
       <button class="primary" data-action="reorder-done">Listo</button>
     </div>
-    <p class="muted hint">Arrastra ⠿ o usa ▲▼ para cambiar el orden (por ejemplo, si una máquina está ocupada). Con 🔗 unes ejercicios para <b>alternar series</b> (una de cada uno, y descanso al terminar la ronda).</p>
+    <p class="muted hint">⠿ arrastra para ordenar · 🔗 alterna series entre ejercicios</p>
     ${rows}`;
 }
 
@@ -642,7 +661,7 @@ function viewRoutines() {
           <button class="ghost danger" data-action="delete-routine" data-id="${r.id}" aria-label="Borrar rutina">✕</button>
         </div>
       </div>
-      <div class="muted" style="margin-top:4px">${r.exerciseIds.map((id) => esc(exName(id))).join(' · ') || 'Sin ejercicios'}</div>
+      <div class="rlist">${r.exerciseIds.map((id) => esc(exName(id))).join(' · ') || 'Sin ejercicios'}</div>
     </div>`).join('');
 
   const groups = {};
@@ -653,8 +672,7 @@ function viewRoutines() {
       ${groups[m].sort((a, b) => a.name.localeCompare(b.name)).map((e) => `
         <div class="row between" style="margin-top:6px">
           <button class="ghost link" data-action="edit-exercise" data-id="${e.id}">
-            ${esc(e.name)}
-            <span class="muted">${e.type === 'time' ? '· por tiempo ' : ''}· ⏱ ${fmtSecs(restFor(e.id))}${e.rest == null ? '' : ' (propio)'}</span>
+            ${esc(e.name)}${e.type === 'time' ? ' <span class="muted">· tiempo</span>' : ''}${e.rest == null ? '' : ` <span class="muted">· ⏱ ${fmtSecs(e.rest)}</span>`}
           </button>
           <button class="ghost danger" data-action="delete-exercise" data-id="${e.id}" aria-label="Borrar ${esc(e.name)}">✕</button>
         </div>`).join('')}
@@ -662,9 +680,8 @@ function viewRoutines() {
 
   return `
     <div class="row between"><h2>Mis rutinas</h2><button class="primary" data-action="new-routine">+ Nueva</button></div>
-    ${routines || '<p class="muted">Todavía no tienes rutinas.</p>'}
+    ${routines || '<p class="muted">Sin rutinas.</p>'}
     <div class="row between" style="margin-top:20px"><h2>Ejercicios</h2><button data-action="new-exercise">+ Nuevo</button></div>
-    <p class="muted hint">Toca un ejercicio para cambiar su descanso o si se mide por tiempo.</p>
     ${exercises}
     <h2 style="margin-top:20px">Datos</h2>
     <div class="card row">
@@ -675,11 +692,11 @@ function viewRoutines() {
 
 function viewHistory() {
   const tools = `<div class="row wrap" style="margin-bottom:12px">
-    <button class="small" data-action="voice-open">🎙️ Registrar un entreno</button>
-    <button class="small" data-action="import-open">📥 Importar historial</button>
+    <button class="small" data-action="voice-open">🎙️ Registrar</button>
+    <button class="small" data-action="import-open">📥 Importar</button>
   </div>`;
   if (!state.workouts.length) {
-    return `${tools}<div class="empty"><div class="big">🗓️</div>Aún no has terminado ningún entreno.<br>Registra uno hablando o importa tu historial de otra IA.</div>`;
+    return `${tools}<div class="empty"><div class="big">🗓️</div>Sin entrenos todavía.</div>`;
   }
   return `<h2>Historial</h2>${tools}` + [...state.workouts].reverse().map((w) => `
     <div class="card">
@@ -757,8 +774,7 @@ function viewProgress() {
       <div class="card stat"><b>${fmtDelta(delta)}</b><span class="muted">cambio</span></div>
     </div>
     <div class="card">
-      <h3>${timed ? 'Mejor tiempo por sesión' : '1RM estimado'}</h3>
-      <p class="muted" style="margin:4px 0 8px">${timed ? 'Tu serie más larga de cada entreno.' : 'Calculado con la fórmula de Epley a partir de tu mejor serie de cada sesión.'}</p>
+      <h3 style="margin-bottom:8px">${timed ? 'Mejor tiempo por sesión' : '1RM estimado'}</h3>
       ${lineChart(pts, fmt)}
     </div>`;
 }
@@ -872,8 +888,7 @@ const actions = {
     const others = a.entries.map((e, k) => ({ e, k })).filter(({ k }) => k !== i);
     if (!others.length) { toast('Añade otro ejercicio para poder alternar'); return false; }
     openDialog(`
-      <h2>Alternar series</h2>
-      <p class="muted">Elige con qué ejercicios alternas las series de <b>${esc(exName(me.exerciseId))}</b>: haces una serie de cada uno y descansas al terminar la ronda.</p>
+      <h2>Alternar ${esc(exName(me.exerciseId))} con…</h2>
       <div class="pick-list">${others.map(({ e, k }) => `<label><input type="checkbox" name="with" value="${k}" ${me.group && e.group === me.group ? 'checked' : ''}> ${esc(exName(e.exerciseId))}</label>`).join('')}</div>
       ${dialogButtons('Guardar')}`,
     (fd) => {
@@ -945,7 +960,6 @@ const actions = {
     if (!ex) return false;
     openDialog(`
       <h2>Descanso · ${esc(ex.name)}</h2>
-      <p class="muted">Tiempo de descanso después de cada serie de este ejercicio. Se recordará para los próximos entrenos.</p>
       <select name="rest">
         <option value="">Predeterminado (${fmtSecs(state.settings.rest)})</option>
         ${restOptions(ex.rest)}
@@ -985,18 +999,17 @@ const actions = {
     const sw = (name, title, help, supported = true) => `
       <label class="switch">
         <input type="checkbox" name="${name}" ${s[name] && supported ? 'checked' : ''} ${supported ? '' : 'disabled'}>
-        <span><b>${title}</b><small>${help}${supported ? '' : ' <em>No disponible en este navegador.</em>'}</small></span>
+        <span><b>${title}</b>${help || !supported ? `<small>${help}${supported ? '' : ' No disponible en este navegador'}</small>` : ''}</span>
       </label>`;
     openDialog(`
       <h2>Ajustes</h2>
-      <label class="field">Descanso por defecto entre series
+      <label class="field">Descanso entre series
         <select name="rest">${restOptions(s.rest)}</select>
       </label>
-      <p class="muted" style="margin:4px 0 8px">Puedes poner un descanso distinto a cada ejercicio con el botón ⏱ durante el entreno.</p>
-      ${sw('lockscreen', 'Temporizador en la pantalla de bloqueo', 'Muestra el descanso y el tiempo de serie en los controles multimedia del móvil, también con el teléfono bloqueado. Ojo: si escuchas música en el mismo móvil, puede pausarla.', canLock)}
-      ${sw('notify', 'Notificaciones', 'Te avisa cuando termina el descanso si la app está en segundo plano.', canNotify)}
-      ${sw('sound', 'Sonido y vibración', 'Pitido y vibración al terminar el descanso o al cumplir el tiempo de una serie.')}
-      ${sw('wakeLock', 'Mantener la pantalla encendida', 'Durante el entreno la pantalla no se apaga sola.', canWake)}
+      ${sw('lockscreen', 'Temporizador con el móvil bloqueado', 'Puede pausar tu música', canLock)}
+      ${sw('notify', 'Notificaciones', 'Aviso al terminar el descanso', canNotify)}
+      ${sw('sound', 'Sonido y vibración', '')}
+      ${sw('wakeLock', 'Pantalla siempre encendida', 'Durante el entreno', canWake)}
       ${dialogButtons('Guardar')}`,
     (fd) => {
       s.rest = +fd.get('rest');
@@ -1302,7 +1315,6 @@ Object.assign(actions, planActions, sessionsActions, {
       <h2>Tu cuenta</h2>
       <p><b>${esc(u.displayName || '')}</b><br><span class="muted">${esc(u.email || '')}</span></p>
       <p class="muted">${statusText}</p>
-      <p class="muted">Tus entrenos, rutinas, plan y ajustes se guardan en tu cuenta y se sincronizan entre tus dispositivos.</p>
       <div class="row" style="margin-top:14px">
         <button class="block" value="sync">Sincronizar ahora</button>
         <button class="block danger" value="logout">Cerrar sesión</button>
