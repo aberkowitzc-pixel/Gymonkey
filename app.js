@@ -5,7 +5,7 @@
  * ============================================================ */
 
 import * as cloud from './cloud.js';
-import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, planTick, planTrainBanner, planBusy, planResume, weekInfo, todayName, WEEKDAYS } from './plan.js';
+import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, onContextFile, onContextInput, planTick, planTrainBanner, planBusy, planResume, weekInfo, todayName, WEEKDAYS } from './plan.js';
 import { suggestLoad } from './progression.js';
 
 const STORAGE_KEY = 'gymonkey:v1';
@@ -990,12 +990,14 @@ document.addEventListener('submit', (ev) => {
 document.addEventListener('input', (ev) => {
   const el = ev.target;
   if (el.dataset.edit) { onPlanInput(el); return; }
+  if (el.dataset.ctxdoc !== undefined) { onContextInput(el); return; }
   if (!el.dataset.field || !state.active) return;
   state.active.entries[+el.dataset.e].sets[+el.dataset.s][el.dataset.field] = el.value;
   save();
 });
 
 document.addEventListener('change', (ev) => {
+  if (ev.target.matches?.('input[data-ctx-file]')) { onContextFile(ev.target); return; }
   if (ev.target.dataset.action === 'pick-progress') {
     progressExerciseId = ev.target.value;
     render();

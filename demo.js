@@ -112,6 +112,7 @@ export function buildPlan(p) {
     days_per_week: days.length,
     session_minutes: minutes,
     total_weeks: total,
+    start_week: 1,
     schedule: days,
     warmup: '5 minutos de cardio suave, movilidad de las articulaciones que vas a usar y 2-3 series de aproximación en el primer ejercicio.',
     principles: [
@@ -150,7 +151,12 @@ export async function demoAI(mode, input, onProgress) {
     };
   }
   if (mode === 'generate') {
-    return { message: 'Este es un plan de EJEMPLO (modo demo). Con el servidor configurado, la IA lo diseña a tu medida.', changes: [], plan: buildPlan(p) };
+    const doc = (input.context_doc || '').trim();
+    return {
+      message: 'Este es un plan de EJEMPLO (modo demo). Con el servidor configurado, la IA lo diseña a tu medida.',
+      changes: doc ? ['Modo demo: el documento adjunto no se interpreta. La IA real lo usaría para dar continuidad a lo que ya haces (estructura, pesos y semana en la que entras).'] : [],
+      plan: buildPlan(p),
+    };
   }
   // adapt
   const fb = input.feedback || {};

@@ -2,6 +2,7 @@
 // plan por mesociclos → aplicar a rutinas → editar a mano o ajustar con IA.
 
 import { DEMO_AI } from './config.js';
+import { MAX_DOC, PROMPT_OTRA_IA, buildExport } from './context.js';
 
 export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const GOALS = [
@@ -30,7 +31,7 @@ const FEEDBACK_OPTIONS = [
   'No tengo acceso a algún ejercicio o máquina', 'Me resulta demasiado fácil',
   'Me resulta demasiado duro / estoy muy cansado', 'Quiero priorizar un músculo', 'Cambiar ejercicios que no me gustan',
 ];
-const PLAN_FIELDS = ['title', 'summary', 'goal', 'split', 'days_per_week', 'session_minutes', 'total_weeks', 'schedule', 'warmup', 'principles', 'mesocycles', 'progression_rules', 'notes'];
+const PLAN_FIELDS = ['title', 'summary', 'goal', 'split', 'days_per_week', 'session_minutes', 'total_weeks', 'start_week', 'schedule', 'warmup', 'principles', 'mesocycles', 'progression_rules', 'notes'];
 
 const DAY = 864e5;
 const label = (list, v) => list.find(([k]) => k === v)?.[1] ?? v;
@@ -49,6 +50,9 @@ const ui = { step: null, loading: null, error: null, questions: null, editing: n
 export const planBusy = () => !!ui.loading;
 
 /* ---------- semana actual del plan ---------- */
+
+/** Semana del plan en la que se entra (1 si se empieza de cero; más si la persona ya llevaba semanas). */
+export const startWeek = (plan) => Math.max(1, Math.min(plan.total_weeks || 1, Math.round(plan.start_week) || 1));
 
 export function weekInfo(plan) {
   if (!plan?.mesocycles?.length) return null;
@@ -172,9 +176,10 @@ async function runAI(text, fn) {
 }
 
 function aiProfile() {
-  const p = S().profile || {};
+  const { context_doc, ...p } = S().profile || {};
   return { ...p, goal: label(GOALS, p.goal), experience: label(LEVELS, p.experience) };
 }
+const profileDoc = () => (S().profile?.context_doc || '').trim();
 const library = () => S().exercises.map((e) => e.name);
 const planForAI = (plan) => Object.fromEntries(PLAN_FIELDS.map((k) => [k, plan[k]]));
 
@@ -307,6 +312,32 @@ function introView() {
     </div>`;
 }
 
+/** Bloque "adjuntar mi plan o notas": archivo, texto pegado y prompt para otra IA. */
+function contextBlock(value = '', open = false) {
+  return `
+    <details class="ctx" ${open || value ? 'open' : ''}>
+      <summary><b>📎 Ya entreno con un plan: adjúntalo</b> <span class="muted">(opcional)</span></summary>
+      <p class="muted">Sube un archivo <b>.md</b> o <b>.txt</b>, o pega el texto de tu plan actual, tus notas o tus marcas. El entrenador le dará continuidad en vez de empezar de cero.</p>
+      <label class="file-btn"><input type="file" data-ctx-file accept=".md,.markdown,.txt,.csv,.json,text/*"><span>📄 Subir archivo</span></label>
+      <textarea name="context_doc" data-ctxdoc rows="6" placeholder="Pega aquí tu plan, tus notas o el resultado de otra IA…">${esc(value)}</textarea>
+      <div class="ctx-count muted" data-ctx-count>${value.length.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')} caracteres</div>
+      <div class="ctx-tools">
+        <p class="muted" style="margin:0"><b>¿Tu plan está en PDF, foto o una app?</b> Pídele a otra IA (ChatGPT, Gemini…) que lo ordene:</p>
+        <div class="row wrap">
+          <button type="button" class="small" data-action="ctx-copy-prompt">📋 Copiar prompt para otra IA</button>
+          <button type="button" class="small" data-action="ctx-copy-export">📤 Copiar mis datos de Gymonkey</button>
+          <button type="button" class="small" data-action="ctx-download-export">⬇️ Descargar .md</button>
+        </div>
+        <ol class="muted ctx-steps">
+          <li>Copia el prompt y pégalo en la otra IA.</li>
+          <li>Adjunta o pega debajo tu plan (texto, captura o PDF).</li>
+          <li>Copia el Markdown que te devuelva y pégalo aquí arriba (o guárdalo como .md y súbelo).</li>
+        </ol>
+        <p class="muted" style="margin:0">🔒 Lo que adjuntes se envía a la IA para generar tu plan. No incluyas nombre, correo ni otros datos personales.</p>
+      </div>
+    </details>`;
+}
+
 function formView() {
   const p = S().profile || {};
   return `
@@ -330,6 +361,7 @@ function formView() {
       <label class="field">Lesiones, molestias o limitaciones<textarea name="injuries" rows="2" placeholder="Ej.: dolor lumbar ocasional, hombro derecho delicado…">${esc(p.injuries || '')}</textarea></label>
       <label class="field">Músculos o aspectos a priorizar<textarea name="priorities" rows="2" placeholder="Ej.: glúteos y espalda, mejorar la sentadilla…">${esc(p.priorities || '')}</textarea></label>
       <label class="field">Preferencias<textarea name="preferences" rows="2" placeholder="Ejercicios que te gustan o quieres evitar, cardio, deportes que practicas…">${esc(p.preferences || '')}</textarea></label>
+      ${contextBlock(p.context_doc || '')}
       <button class="primary block">Siguiente</button>
       <button type="button" class="ghost block" data-action="plan-cancel">Cancelar</button>
     </form>`;
@@ -374,7 +406,9 @@ function planView(plan) {
   const progress = !wi.started
     ? `<div class="card accent">
         <h3>¿Empezamos?</h3>
-        <p class="muted">Se crearán tus rutinas del mesociclo 1 (una por día de entreno) y empezará a contar la semana 1 desde hoy.</p>
+        <p class="muted">${startWeek(plan) > 1
+          ? `Según lo que ya llevas hecho, entras en la <b>semana ${startWeek(plan)}</b>. Se crearán las rutinas de ese mesociclo (una por día de entreno).`
+          : 'Se crearán tus rutinas del mesociclo 1 (una por día de entreno) y empezará a contar la semana 1 desde hoy.'}</p>
         <button class="primary block" data-action="plan-apply">Empezar el plan y crear mis rutinas</button>
       </div>`
     : `<div class="card">
@@ -499,15 +533,17 @@ export function onPlanSubmit(form) {
       minutes: +fd.get('minutes'), weeks: +fd.get('weeks'),
       equipment: fd.getAll('equipment'),
       age: fd.get('age').trim(), sex: fd.get('sex'), reference_lifts: fd.get('reference_lifts').trim(),
+      context_doc: (fd.get('context_doc') || '').trim(),
       injuries: fd.get('injuries').trim(), priorities: fd.get('priorities').trim(), preferences: fd.get('preferences').trim(),
     };
     st.profile = profile;
     ctx.save();
     if (!profile.days.length) { ui.error = 'Elige al menos un día de entreno.'; ctx.render(); return; }
     if (!profile.equipment.length) { ui.error = 'Marca el material que tienes disponible.'; ctx.render(); return; }
+    if (profile.context_doc.length > MAX_DOC) { ui.error = `El documento adjunto supera los ${MAX_DOC.toLocaleString('es')} caracteres. Resume lo más importante y vuelve a intentarlo.`; ctx.render(); return; }
     ui.draft = {};
     runAI('Pensando qué preguntarte…', async (o) => {
-      ui.questions = await callAI('questions', { profile: aiProfile() }, o);
+      ui.questions = await callAI('questions', { profile: aiProfile(), context_doc: profileDoc() }, o);
       ui.step = 'questions';
     });
   } else if (form.dataset.form === 'plan-questions') {
@@ -517,7 +553,7 @@ export function onPlanSubmit(form) {
     }));
     ui.draft = Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === 'string'));
     runAI('Diseñando tu plan por mesociclos…', async (o) => {
-      const r = await callAI('generate', { profile: aiProfile(), answers, library: library(), today: todayISO() }, o);
+      const r = await callAI('generate', { profile: aiProfile(), answers, library: library(), today: todayISO(), context_doc: profileDoc() }, o);
       setPlan(r.plan, r.message, [], false);
       ui.step = null;
       ctx.toast('¡Tu plan está listo!');
@@ -542,7 +578,73 @@ export function onPlanInput(el) {
 
 /* ---------- acciones ---------- */
 
+/** Copia al portapapeles; si el navegador lo impide, muestra el texto seleccionado para copiarlo a mano. */
+async function copyText(text, btn, okMsg) {
+  try {
+    await navigator.clipboard.writeText(text);
+    ctx.toast(okMsg);
+    return;
+  } catch { /* sin permiso: se ofrece copia manual */ }
+  const host = btn.closest('.ctx-tools') || btn.parentElement;
+  host.querySelector('.copy-fallback')?.remove();
+  const ta = document.createElement('textarea');
+  ta.className = 'copy-fallback';
+  ta.readOnly = true;
+  ta.rows = 6;
+  ta.value = text;
+  host.appendChild(ta);
+  ta.focus();
+  ta.select();
+  ctx.toast('Selecciona el texto y cópialo');
+}
+
+const stamp = () => new Date().toISOString().slice(0, 10);
+const exportMd = () => {
+  const st = S();
+  return buildExport({
+    profile: st.profile ? aiProfile() : null, plan: st.plan, week: st.plan ? weekInfo(st.plan) : null,
+    workouts: st.workouts, routines: st.routines, exName: ctx.exName, fmtSet: ctx.fmtSet,
+  });
+};
+
+/** Carga un archivo de texto en el cuadro de documento. */
+export async function onContextFile(input) {
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  const box = input.closest('.ctx')?.querySelector('textarea[data-ctxdoc]');
+  if (!box) return;
+  if (file.size > MAX_DOC * 4) { ctx.toast('El archivo es demasiado grande'); return; }
+  let text = '';
+  try { text = await file.text(); } catch { ctx.toast('No se pudo leer el archivo'); return; }
+  if (text.includes('\u0000') || /^%PDF/.test(text)) { ctx.toast('Ese archivo no es de texto. Para PDF o fotos usa el prompt para otra IA'); return; }
+  const merged = box.value.trim() ? `${box.value.trim()}\n\n---\n\n${text.trim()}` : text.trim();
+  if (merged.length > MAX_DOC) { ctx.toast(`Demasiado largo (${merged.length.toLocaleString('es')} de ${MAX_DOC.toLocaleString('es')} caracteres). Resume el archivo`); return; }
+  box.value = merged;
+  onContextInput(box);
+  ctx.toast(`Cargado: ${file.name}`);
+}
+
+export function onContextInput(box) {
+  const n = box.closest('.ctx')?.querySelector('[data-ctx-count]');
+  if (!n) return;
+  const len = box.value.length;
+  n.textContent = `${len.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')} caracteres`;
+  n.classList.toggle('over', len > MAX_DOC);
+}
+
 export const planActions = {
+  'ctx-copy-prompt'(_, el) { copyText(PROMPT_OTRA_IA, el, 'Prompt copiado: pégalo en la otra IA'); return false; },
+  'ctx-copy-export'(_, el) { copyText(exportMd(), el, 'Datos copiados en Markdown'); return false; },
+  'ctx-download-export'() {
+    const blob = new Blob([exportMd()], { type: 'text/markdown' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `gymonkey-datos-${stamp()}.md`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    return false;
+  },
   'plan-retry'() {
     const run = ui.lastRun;
     if (!run) return false;
@@ -565,7 +667,7 @@ export const planActions = {
   'plan-dismiss-msg'() { S().plan.lastMessage = ''; S().plan.lastChanges = []; },
   'plan-apply'() {
     const plan = S().plan;
-    if (!plan.startDate) plan.startDate = startOfDay(Date.now());
+    if (!plan.startDate) plan.startDate = startOfDay(Date.now()) - (startWeek(plan) - 1) * 7 * DAY;
     applyMeso(weekInfo(plan).meso);
     ctx.toast('Rutinas creadas: las tienes en Entrenar');
   },
@@ -602,15 +704,18 @@ export const planActions = {
       <label class="field" style="margin-top:12px">Comentario para el entrenador
         <textarea name="text" rows="4" placeholder="Ej.: Los jueves ya no puedo ir. Me molesta la rodilla al hacer zancadas."></textarea>
       </label>
+      <div style="margin-top:12px">${contextBlock('').replace('Ya entreno con un plan: adjúntalo', 'Adjuntar un archivo o mis notas')}</div>
       ${ctx.dialogButtons('Ajustar plan')}`,
     (fd) => {
       const opts = fd.getAll('opt');
       const days = WEEKDAYS.filter((d) => fd.getAll('days').includes(d));
       const minutes = +fd.get('minutes');
       const text = fd.get('text').trim();
+      const doc = (fd.get('context_doc') || '').trim();
+      if (doc.length > MAX_DOC) { ctx.toast(`El documento supera los ${MAX_DOC.toLocaleString('es')} caracteres`); return; }
       const daysChanged = days.join() !== plan.schedule.join();
       const minutesChanged = minutes !== plan.session_minutes;
-      if (!opts.length && !text && !daysChanged && !minutesChanged) { ctx.toast('Indica qué quieres cambiar'); return; }
+      if (!opts.length && !text && !daysChanged && !minutesChanged && !doc) { ctx.toast('Indica qué quieres cambiar'); return; }
       if (!days.length) { ctx.toast('Elige al menos un día'); return; }
       const st = S();
       if (st.profile) {
@@ -620,7 +725,7 @@ export const planActions = {
       runAI('Adaptando tu plan…', async (o) => {
         const r = await callAI('adapt', {
           profile: aiProfile(), plan: planForAI(plan), currentWeek: weekInfo(plan).week,
-          history: trainingSummary(), library: library(), today: todayISO(),
+          history: trainingSummary(), library: library(), today: todayISO(), context_doc: doc,
           feedback: { options: opts, days: daysChanged ? days : [], minutes: minutesChanged ? minutes : null, text },
         }, o);
         setPlan(r.plan, r.message, r.changes, true);
