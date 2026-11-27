@@ -87,3 +87,30 @@ test('ignora sesiones sin series válidas y usa la última con datos', () => {
   const s = suggestLoad({ name: 'Press de banca', reps: '6-8', history: [sess(2, [['', '']]), sess(9, [[60, 8], [60, 8], [60, 8]])], now: NOW });
   assert.equal(s.kind, 'up');
 });
+
+import { suggestedReps, inferRange } from '../progression.js';
+
+test('repeticiones sugeridas: sube el peso → mínimo del rango; mantiene → una más que la última vez', () => {
+  const up = suggestLoad({ name: 'Press de banca', reps: '6-8', history: [sess(7, [[60, 8], [60, 8], [60, 8]])], now: NOW });
+  assert.equal(suggestedReps(up, 0), 6);
+  const hold = suggestLoad({ name: 'Press de banca', reps: '6-8', history: [sess(7, [[60, 8], [60, 7], [60, 6]])], now: NOW });
+  assert.deepEqual([0, 1, 2].map((i) => suggestedReps(hold, i)), [8, 8, 7]);
+  const almost = suggestLoad({ name: 'Press de banca', reps: '6-8', history: [sess(7, [[60, 6], [60, 5], [60, 5]])], now: NOW });
+  assert.deepEqual([0, 1, 2].map((i) => suggestedReps(almost, i)), [7, 6, 6]);
+});
+
+test('repeticiones sugeridas: primera vez, bajada, descarga y vuelta tras una pausa', () => {
+  assert.equal(suggestedReps(suggestLoad({ name: 'Press de banca', reps: '6-8', history: [], now: NOW }), 0), 6);
+  assert.equal(suggestedReps(suggestLoad({ name: 'Press de banca', reps: '6-8', history: [sess(7, [[60, 4], [60, 3]])], now: NOW }), 0), 6);
+  assert.equal(suggestedReps(suggestLoad({ name: 'Press de banca', reps: '6-8', history: [sess(7, [[60, 8], [60, 8]])], deload: true, now: NOW }), 0), 6);
+  assert.equal(suggestedReps(suggestLoad({ name: 'Press de banca', reps: '6-8', history: [sess(30, [[60, 7], [60, 7]])], now: NOW }), 0), 7);
+  assert.equal(suggestedReps(null, 0), null);
+});
+
+test('sin objetivo del plan, el rango se deduce de la última sesión', () => {
+  assert.equal(inferRange([{ r: 8 }, { r: 7 }, { r: 6 }]), '6-8');
+  assert.equal(inferRange([{ r: 5 }, { r: 5 }, { r: 5 }]), '5-7');
+  assert.equal(inferRange([]), '8-12');
+  const s = suggestLoad({ name: 'Remo', reps: inferRange([{ r: 10 }, { r: 10 }, { r: 10 }]), history: [sess(7, [[40, 10], [40, 10], [40, 10]])], now: NOW });
+  assert.equal(s.kind, 'hold');
+});

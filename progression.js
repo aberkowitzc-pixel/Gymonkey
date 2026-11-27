@@ -48,20 +48,21 @@ export function suggestLoad({ name, reps, history = [], startLoad = 0, deload = 
 
   if (!last) {
     if (startLoad > 0) {
-      return { weight: roundLoad(startLoad), kind: 'start', note: `Punto de partida según tus marcas de referencia. Ajusta para llegar a ${lo}-${hi} reps dejando 2-3 en reserva.` };
+      return { weight: roundLoad(startLoad), kind: 'start', lo, hi, lastReps: [], note: `Punto de partida según tus marcas de referencia. Ajusta para llegar a ${lo}-${hi} reps dejando 2-3 en reserva.` };
     }
-    return { weight: null, kind: 'calibrate', note: `Primera vez: elige un peso con el que completes ${lo}-${hi} reps dejando 2-3 en reserva. Desde la próxima sesión la app te propone la carga.` };
+    return { weight: null, kind: 'calibrate', lo, hi, lastReps: [], note: `Primera vez: elige un peso con el que completes ${lo}-${hi} reps dejando 2-3 en reserva. Desde la próxima sesión la app te propone la carga.` };
   }
 
   const sets = last.sets.filter((s) => num(s.r) > 0);
   const maxW = Math.max(...sets.map((s) => num(s.w)));
   const lastText = sets.map((s) => (num(s.w) ? `${fmt(num(s.w))}×${num(s.r)}` : `${num(s.r)} reps`)).join(', ');
+  const lastReps = sets.map((s) => num(s.r));
 
   // Ejercicio con el propio peso corporal.
   if (maxW === 0) {
     const allTop = sets.every((s) => num(s.r) >= hi);
     return {
-      weight: null, kind: allTop ? 'up' : 'hold', lastText,
+      weight: null, kind: allTop ? 'up' : 'hold', lastText, lo, hi, lastReps,
       note: allTop
         ? `Llegaste a ${hi} reps en todas las series: añade lastre (2,5-5 kg) o pasa a una variante más difícil.`
         : `Intenta sumar 1 repetición por serie (objetivo ${lo}-${hi}).`,
@@ -97,5 +98,28 @@ export function suggestLoad({ name, reps, history = [], startLoad = 0, deload = 
     note = `Llevas ${Math.round(gapDays / 7)} semanas sin hacer este ejercicio: vuelve con ≈ 90 % del peso y sube de nuevo.`;
   }
 
-  return { weight: roundLoad(weight), kind, note, lastText };
+  return { weight: roundLoad(weight), kind, note, lastText, lo, hi, lastReps };
+}
+
+/**
+ * Repeticiones que se proponen para la serie i (0 = primera), para confirmar con un toque.
+ *  · Mantienes el peso → una repetición más que la última vez (sin pasar del tope ni bajar del mínimo).
+ *  · Sube el peso, baja, descarga o primera vez → el mínimo del rango (con más peso se hacen menos repeticiones).
+ *  · Vuelta tras una pausa → lo que hacías, dentro del rango.
+ */
+export function suggestedReps(s, i = 0) {
+  if (!s) return null;
+  const { kind, lo, hi, lastReps = [] } = s;
+  const last = lastReps[i] ?? lastReps[lastReps.length - 1];
+  if (kind === 'hold') return Math.min(hi, Math.max(lo, (last ?? lo - 1) + 1));
+  if (kind === 'break') return Math.min(hi, Math.max(lo, last ?? lo));
+  return lo;
+}
+
+/** Rango de repeticiones deducido de la última sesión, para ejercicios sin objetivo del plan. */
+export function inferRange(sets = []) {
+  const reps = sets.map((s) => num(s.r)).filter((r) => r > 0);
+  if (!reps.length) return '8-12';
+  const lo = Math.min(...reps), hi = Math.max(...reps);
+  return `${lo}-${hi > lo ? hi : lo + 2}`;
 }

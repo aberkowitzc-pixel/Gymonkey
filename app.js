@@ -6,7 +6,7 @@
 
 import * as cloud from './cloud.js';
 import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, onContextFile, onContextInput, planTick, planTrainBanner, planBusy, planResume, weekInfo, todayName, WEEKDAYS } from './plan.js';
-import { suggestLoad } from './progression.js';
+import { suggestLoad, suggestedReps, inferRange, parseRange } from './progression.js';
 
 const STORAGE_KEY = 'gymonkey:v1';
 const REST_OPTIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 240, 300];
@@ -76,6 +76,7 @@ function load() {
 
 let state = load();
 let tab = 'train';
+let reorder = false;
 let progressExerciseId = null;
 
 function storeLocal() {
@@ -156,14 +157,25 @@ function newEntry(exerciseId, target, { deload = false } = {}) {
   if (tg && deload) { tg.sets = Math.max(1, Math.ceil(tg.sets / 2)); tg.deload = true; }
   const count = tg?.sets || prev.length || 3;
 
-  // Carga de hoy por doble progresión (no aplica a ejercicios por tiempo).
+  // Carga y repeticiones de hoy por doble progresión (no aplica a ejercicios por tiempo).
+  // Sin objetivo del plan, el rango se deduce de lo que hiciste la última vez.
+  const history = historyFor(exerciseId);
   const suggestion = timed ? null : suggestLoad({
-    name: exName(exerciseId), reps: tg?.reps, history: historyFor(exerciseId), startLoad: tg?.startLoad || 0, deload,
+    name: exName(exerciseId), reps: tg?.reps || inferRange(history[0]?.sets), history, startLoad: tg?.startLoad || 0, deload,
   });
+  const [tLo, tHi] = parseRange(tg?.reps);
   const sets = Array.from({ length: count }, (_, i) => {
     const p = prev[i] || prev[prev.length - 1];
-    const w = suggestion?.weight != null ? String(suggestion.weight) : (suggestion ? '' : (p?.w ?? ''));
-    return { w, r: tg ? '' : (p?.r ?? ''), done: false };
+    if (suggestion) {
+      const rep = suggestedReps(suggestion, i);
+      // Todo viene sugerido: solo hay que confirmar (o corregir lo que no se parezca a lo que hiciste).
+      return { w: suggestion.weight != null ? String(suggestion.weight) : '', r: rep != null ? String(rep) : '', done: false, sug: true };
+    }
+    if (timed && tg) {
+      const secs = prev[i] ? Math.min(tHi, num(prev[i].r) + 5) : tLo;
+      return { w: p?.w ?? '', r: String(secs), done: false, sug: true };
+    }
+    return { w: p?.w ?? '', r: p?.r ?? '', done: false, sug: !!p };
   });
   const entry = { exerciseId, sets };
   if (tg) entry.target = tg;
@@ -199,10 +211,58 @@ function timerInfo() {
   return { kind: 'set', name, elapsed, setNo: t.s + 1, target };
 }
 
+/* ---------- bloques: ejercicios que se alternan serie a serie (A1, B1, A2, B2…) ---------- */
+
+const BLOCK_COLORS = ['#16a34a', '#2563eb', '#d97706', '#9333ea'];
+const blockOrder = (entries) => [...new Set(entries.map((x) => x.group).filter(Boolean))];
+const blockLetter = (entries, g) => String.fromCharCode(65 + blockOrder(entries).indexOf(g));
+const blockColor = (entries, g) => BLOCK_COLORS[Math.max(0, blockOrder(entries).indexOf(g)) % BLOCK_COLORS.length];
+
+/** Un bloque necesita al menos dos ejercicios. */
+function cleanGroups(a) {
+  const n = {};
+  a.entries.forEach((x) => { if (x.group) n[x.group] = (n[x.group] || 0) + 1; });
+  a.entries.forEach((x) => { if (x.group && n[x.group] < 2) delete x.group; });
+}
+
+/** Próxima serie por hacer del bloque: por rondas, en el orden de la lista (A1, B1, A2, B2…). */
+function nextInGroup(a, g) {
+  const members = a.entries.filter((x) => x.group === g);
+  const rounds = Math.max(0, ...members.map((m) => m.sets.length));
+  for (let r = 0; r < rounds; r++) {
+    for (const m of members) if (m.sets[r] && !m.sets[r].done) return { entry: m, si: r };
+  }
+  return null;
+}
+
+/** ¿Falta alguna serie de esta ronda en otro ejercicio del bloque? Si falta, aún no toca descansar. */
+const roundPending = (a, entry, si) => a.entries.some((m) => m !== entry && m.group === entry.group && m.sets[si] && !m.sets[si].done);
+
 function startRest(e) {
   const a = state.active;
-  a.timer = { kind: 'rest', e, start: Date.now(), duration: restForEntry(a.entries[e]) * 1000, alerted: false };
+  const entry = a.entries[e];
+  // En un bloque se descansa al terminar la ronda, el tiempo más largo de sus ejercicios.
+  const members = entry.group ? a.entries.filter((x) => x.group === entry.group) : [entry];
+  const secs = Math.max(...members.map(restForEntry));
+  a.timer = { kind: 'rest', e, start: Date.now(), duration: secs * 1000, alerted: false };
   startMedia();
+}
+
+function afterSetDone(e, si) {
+  const a = state.active;
+  const entry = a.entries[e];
+  if (entry.group && roundPending(a, entry, si)) { if (a.timer?.kind === 'set') a.timer = null; return; }
+  startRest(e);
+}
+
+function moveEntry(from, to) {
+  const a = state.active;
+  if (!a || from === to || from < 0 || to < 0 || from >= a.entries.length || to >= a.entries.length) return;
+  const timed = a.timer ? a.entries[a.timer.e] : null;
+  const [x] = a.entries.splice(from, 1);
+  a.entries.splice(to, 0, x);
+  if (timed) a.timer.e = a.entries.indexOf(timed);
+  commit();
 }
 
 /* ---------- sonido y vibración ---------- */
@@ -485,18 +545,22 @@ function viewTrain() {
       ${routines || '<p class="muted">Crea una rutina en la pestaña Rutinas o genera un plan con IA en la pestaña Plan.</p>'}`;
   }
 
+  if (reorder) return viewReorder(a);
+
   const t = a.timer;
   const entries = a.entries.map((e, ei) => {
+    const g = e.group ? { next: nextInGroup(a, e.group), others: a.entries.filter((x) => x.group === e.group && x !== e) } : null;
     const prev = lastSetsFor(e.exerciseId);
     const timed = isTimed(e.exerciseId);
     const rows = e.sets.map((s, si) => {
       const running = t?.kind === 'set' && t.e === ei && t.s === si;
+      const isNext = g?.next && g.next.entry === e && g.next.si === si;
       return `
-      <tr class="${s.done ? 'done' : ''} ${running ? 'running' : ''}">
+      <tr class="${s.done ? 'done' : ''} ${running ? 'running' : ''} ${isNext ? 'next' : ''}">
         <td>${si + 1}</td>
         <td class="prev">${prev[si] ? fmtSet(e.exerciseId, prev[si]) : '—'}</td>
-        <td><input inputmode="decimal" placeholder="kg" value="${esc(s.w)}" data-field="w" data-e="${ei}" data-s="${si}" aria-label="Peso serie ${si + 1}"></td>
-        <td><input inputmode="numeric" placeholder="${e.target ? esc(e.target.reps) : timed ? 'seg' : 'reps'}" value="${esc(s.r)}" data-field="r" data-e="${ei}" data-s="${si}" aria-label="${timed ? 'Segundos' : 'Repeticiones'} serie ${si + 1}"></td>
+        <td><input class="${s.sug && !s.done ? 'sug' : ''}" inputmode="decimal" placeholder="kg" value="${esc(s.w)}" data-field="w" data-e="${ei}" data-s="${si}" aria-label="Peso serie ${si + 1}"></td>
+        <td><input class="${s.sug && !s.done ? 'sug' : ''}" inputmode="numeric" placeholder="${e.target ? esc(e.target.reps) : timed ? 'seg' : 'reps'}" value="${esc(s.r)}" data-field="r" data-e="${ei}" data-s="${si}" aria-label="${timed ? 'Segundos' : 'Repeticiones'} serie ${si + 1}"></td>
         <td class="btns">
           <button class="icon play" data-action="${running ? 'finish-set' : 'start-set'}" data-e="${ei}" data-s="${si}" aria-label="${running ? 'Terminar' : 'Cronometrar'} serie ${si + 1}">${running ? '■' : '▶'}</button>
           <button class="icon check" data-action="toggle-set" data-e="${ei}" data-s="${si}" aria-label="Completar serie ${si + 1}">✓</button>
@@ -505,7 +569,7 @@ function viewTrain() {
     }).join('');
     const tg = e.target;
     return `
-      <div class="card">
+      <div class="card ${g ? 'grouped' : ''}" ${g ? `style="--block:${blockColor(a.entries, e.group)}"` : ''}>
         <div class="row between">
           <h3>${esc(exName(e.exerciseId))}</h3>
           <div class="row">
@@ -513,8 +577,9 @@ function viewTrain() {
             <button class="ghost danger" data-action="remove-entry" data-e="${ei}" aria-label="Quitar ejercicio">✕</button>
           </div>
         </div>
+        ${g ? `<div class="blockinfo">🔗 <b>Bloque ${blockLetter(a.entries, e.group)}</b> · alternas con ${g.others.map((x) => esc(exName(x.exerciseId))).join(', ')} · ${g.next ? `ahora toca: <b>${esc(exName(g.next.entry.exerciseId))}</b>, serie ${g.next.si + 1}` : 'bloque completo ✓'}</div>` : ''}
         ${tg ? `<div class="target">🎯 ${tg.sets}×${esc(tg.reps)}${timed ? ' s' : ''} · RIR ${esc(tg.rir)}${tg.deload ? ' · descarga' : ''}${tg.notes ? `<small>${esc(tg.notes)}</small>` : ''}</div>` : ''}
-        ${e.suggest ? `<div class="suggest ${e.suggest.kind}"><b>💡 ${e.suggest.weight != null ? `Hoy: ${fmtKg(e.suggest.weight)} kg` : e.suggest.kind === 'calibrate' ? 'Calibra el peso' : 'Hoy: sube repeticiones'}</b>${e.suggest.lastText ? `<small>Última vez: ${esc(e.suggest.lastText)}</small>` : ''}<small>${esc(e.suggest.note)}</small></div>` : ''}
+        ${e.suggest ? `<div class="suggest ${e.suggest.kind}"><b>💡 ${e.suggest.weight != null ? `Hoy: ${fmtKg(e.suggest.weight)} kg × ${suggestedReps(e.suggest, 0)}` : e.suggest.kind === 'calibrate' ? 'Calibra el peso' : `Hoy: apunta a ${suggestedReps(e.suggest, 0)} reps`}</b>${e.suggest.lastText ? `<small>Última vez: ${esc(e.suggest.lastText)}</small>` : ''}<small>${esc(e.suggest.note)}</small></div>` : ''}
         <table class="sets">
           <thead><tr><th>#</th><th>Anterior</th><th>Kg</th><th>${timed ? 'Seg' : 'Reps'}</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
@@ -534,10 +599,33 @@ function viewTrain() {
       </div>
       <button class="primary" data-action="finish">Terminar</button>
     </div>
-    <p class="muted hint">▶ cronometra la serie · ✓ la marca como hecha. Al terminar una serie empieza el descanso.</p>
+    <p class="muted hint">Los valores en verde son sugerencias: confírmalos con ✓ o corrígelos. ▶ cronometra la serie. Al terminar una serie empieza el descanso.</p>
+    ${a.entries.length > 1 ? '<button class="small" style="margin-bottom:10px" data-action="reorder-start">↕️ Orden y bloques</button>' : ''}
     ${entries || '<div class="empty"><div class="big">💪</div>Añade tu primer ejercicio</div>'}
     <button class="block" data-action="add-exercise">+ Añadir ejercicio</button>
     <button class="block ghost danger" style="margin-top:12px" data-action="discard">Descartar entreno</button>`;
+}
+
+function viewReorder(a) {
+  const rows = a.entries.map((e, i) => {
+    const lab = e.group ? blockLetter(a.entries, e.group) : '';
+    const done = e.sets.filter((s) => s.done).length;
+    return `
+      <div class="rrow ${e.group ? 'grouped' : ''}" ${e.group ? `style="--block:${blockColor(a.entries, e.group)}"` : ''}>
+        <button class="handle" data-handle aria-label="Arrastrar para cambiar el orden">⠿</button>
+        <div class="rname"><b>${esc(exName(e.exerciseId))}</b><small>${e.group ? `🔗 Bloque ${lab} · ` : ''}${e.sets.length} series${done ? ` · ${done} hechas` : ''}</small></div>
+        <button class="icon" data-action="move-up" data-e="${i}" aria-label="Subir" ${i === 0 ? 'disabled' : ''}>▲</button>
+        <button class="icon" data-action="move-down" data-e="${i}" aria-label="Bajar" ${i === a.entries.length - 1 ? 'disabled' : ''}>▼</button>
+        <button class="icon" data-action="block-dialog" data-e="${i}" aria-label="Alternar series con otros ejercicios">🔗</button>
+      </div>`;
+  }).join('');
+  return `
+    <div class="card row between">
+      <h3>Orden y bloques</h3>
+      <button class="primary" data-action="reorder-done">Listo</button>
+    </div>
+    <p class="muted hint">Arrastra ⠿ o usa ▲▼ para cambiar el orden (por ejemplo, si una máquina está ocupada). Con 🔗 unes ejercicios para <b>alternar series</b> (una de cada uno, y descanso al terminar la ronda).</p>
+    ${rows}`;
 }
 
 function viewRoutines() {
@@ -594,7 +682,8 @@ function viewHistory() {
       <div class="stack" style="margin-top:8px">
         ${w.entries.map((e) => {
           const done = e.sets.filter((s) => s.done);
-          return `<div class="row between"><span>${esc(exName(e.exerciseId))}</span><span class="muted">${done.map((s) => fmtSet(e.exerciseId, s)).join(', ') || '—'}</span></div>`;
+          const badge = e.group ? ` <span class="pill">🔗${blockLetter(w.entries, e.group)}</span>` : '';
+          return `<div class="row between"><span>${esc(exName(e.exerciseId))}${badge}</span><span class="muted">${done.map((s) => fmtSet(e.exerciseId, s)).join(', ') || '—'}</span></div>`;
         }).join('')}
       </div>
     </div>`).join('');
@@ -764,11 +853,40 @@ const actions = {
       if (a.timer.e === i) a.timer = null;
       else if (a.timer.e > i) a.timer.e--;
     }
+    cleanGroups(a);
+  },
+  'reorder-start'() { reorder = true; },
+  'reorder-done'() { reorder = false; },
+  'move-up'(_, el) { moveEntry(+el.dataset.e, +el.dataset.e - 1); return false; },
+  'move-down'(_, el) { moveEntry(+el.dataset.e, +el.dataset.e + 1); return false; },
+  'block-dialog'(_, el) {
+    const a = state.active, i = +el.dataset.e, me = a.entries[i];
+    const others = a.entries.map((e, k) => ({ e, k })).filter(({ k }) => k !== i);
+    if (!others.length) { toast('Añade otro ejercicio para poder alternar'); return false; }
+    openDialog(`
+      <h2>Alternar series</h2>
+      <p class="muted">Elige con qué ejercicios alternas las series de <b>${esc(exName(me.exerciseId))}</b>: haces una serie de cada uno y descansas al terminar la ronda.</p>
+      <div class="pick-list">${others.map(({ e, k }) => `<label><input type="checkbox" name="with" value="${k}" ${me.group && e.group === me.group ? 'checked' : ''}> ${esc(exName(e.exerciseId))}</label>`).join('')}</div>
+      ${dialogButtons('Guardar')}`,
+    (fd) => {
+      const chosen = fd.getAll('with').map((k) => a.entries[+k]);
+      const old = me.group;
+      if (old) a.entries.forEach((x) => { if (x.group === old && x !== me && !chosen.includes(x)) delete x.group; });
+      if (!chosen.length) delete me.group;
+      else {
+        const id = me.group || chosen.find((c) => c.group)?.group || uid();
+        me.group = id;
+        chosen.forEach((c) => { c.group = id; });
+      }
+      cleanGroups(a);
+      commit();
+    });
+    return false;
   },
   'add-set'(_, el) {
     const sets = state.active.entries[+el.dataset.e].sets;
     const last = sets[sets.length - 1];
-    sets.push({ w: last?.w ?? '', r: last?.r ?? '', done: false });
+    sets.push({ w: last?.w ?? '', r: last?.r ?? '', done: false, sug: !!last?.sug });
   },
   'remove-set'(_, el) {
     const a = state.active, e = +el.dataset.e;
@@ -780,7 +898,7 @@ const actions = {
     if (a.timer?.kind === 'set' && a.timer.e === e && a.timer.s === si) return actions['finish-set']();
     const s = a.entries[e].sets[si];
     s.done = !s.done;
-    if (s.done) startRest(e);
+    if (s.done) { s.sug = false; afterSetDone(e, si); }
   },
   'start-set'(_, el) {
     const e = +el.dataset.e, s = +el.dataset.s;
@@ -797,7 +915,9 @@ const actions = {
     set.t = secs;
     if (isTimed(entry.exerciseId)) set.r = String(secs);
     set.done = true;
-    startRest(t.e);
+    set.sug = false;
+    a.timer = null;
+    afterSetDone(t.e, t.s);
   },
   'cancel-timer'() { state.active.timer = null; },
   'rest-adjust'(_, el) {
@@ -976,6 +1096,41 @@ document.addEventListener('click', (ev) => {
   if (fn(el.dataset.id, el) !== false) commit();
 });
 
+// Arrastrar y soltar con el dedo (o el ratón) desde el asa ⠿ en "Orden y bloques".
+let drag = null;
+document.addEventListener('pointerdown', (ev) => {
+  const handle = ev.target.closest?.('[data-handle]');
+  const row = handle?.closest('.rrow');
+  if (!row) return;
+  ev.preventDefault();
+  const rows = [...document.querySelectorAll('.rrow')];
+  drag = {
+    row, rows, from: rows.indexOf(row), to: rows.indexOf(row), startY: ev.clientY,
+    mids: rows.map((r) => { const b = r.getBoundingClientRect(); return b.top + b.height / 2 + window.scrollY; }),
+  };
+  row.classList.add('dragging');
+  handle.setPointerCapture?.(ev.pointerId);
+}, { passive: false });
+document.addEventListener('pointermove', (ev) => {
+  if (!drag) return;
+  drag.row.style.transform = `translateY(${ev.clientY - drag.startY}px)`;
+  const y = ev.clientY + window.scrollY;
+  // Posición final = filas (distintas de la arrastrada) cuyo centro queda por encima del puntero.
+  drag.to = drag.mids.filter((m, i) => i !== drag.from && m < y).length;
+  const others = drag.rows.filter((_, i) => i !== drag.from);
+  drag.rows.forEach((r) => r.classList.remove('drop-above', 'drop-below'));
+  if (others[drag.to]) others[drag.to].classList.add('drop-above'); else others.at(-1)?.classList.add('drop-below');
+});
+const endDrag = () => {
+  if (!drag) return;
+  const { row, from, to } = drag;
+  drag = null;
+  row.style.transform = '';
+  if (from !== to) moveEntry(from, to); else render();
+};
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
+
 // El audio del móvil solo se puede activar tras un toque del usuario.
 document.addEventListener('pointerdown', () => audioCtx(), { passive: true });
 
@@ -992,7 +1147,13 @@ document.addEventListener('input', (ev) => {
   if (el.dataset.edit) { onPlanInput(el); return; }
   if (el.dataset.ctxdoc !== undefined) { onContextInput(el); return; }
   if (!el.dataset.field || !state.active) return;
-  state.active.entries[+el.dataset.e].sets[+el.dataset.s][el.dataset.field] = el.value;
+  const set = state.active.entries[+el.dataset.e].sets[+el.dataset.s];
+  set[el.dataset.field] = el.value;
+  if (set.sug) {
+    // Al corregir una serie sugerida deja de verse como sugerencia.
+    set.sug = false;
+    el.closest('tr')?.querySelectorAll('input.sug').forEach((i) => i.classList.remove('sug'));
+  }
   save();
 });
 
