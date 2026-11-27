@@ -76,7 +76,7 @@ export function weekInfo(plan) {
 
 const IDLE_MS = 45_000; // sin ninguna señal del servidor durante este tiempo = conexión perdida
 
-async function callAI(mode, input, { signal, onProgress } = {}) {
+export async function callAI(mode, input, { signal, onProgress } = {}) {
   if (DEMO_AI) return (await import('./demo.js')).demoAI(mode, input, onProgress);
   const auth = ctx.auth;
   if (auth.configured && !auth.user()) throw new Error('Inicia sesión con Google para usar la IA.');
@@ -334,6 +334,7 @@ function contextBlock(value = '', open = false) {
           <li>Cópialo y pégalo aquí arriba (o guárdalo como .md y súbelo).</li>
         </ol>
         <p class="muted" style="margin:0">¿Tu plan está solo en un PDF o una foto? Adjúntalo en ese mismo mensaje.</p>
+        <p class="muted" style="margin:0">📥 ¿Su resumen incluye sesiones con fecha? Impórtalas a tu historial desde la pestaña <b>Historial</b>.</p>
         <p class="muted" style="margin:0">🔒 Lo que adjuntes se envía a la IA para generar tu plan. No incluyas nombre, correo ni otros datos personales.</p>
       </div>
     </details>`;

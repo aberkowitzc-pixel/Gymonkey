@@ -23,7 +23,7 @@ test('el prompt pide resumir lo que la otra IA ya sabe de la persona, no entrega
 });
 
 test('el prompt cubre todo el contexto útil con la estructura que lee el entrenador', () => {
-  for (const h of ['## Perfil', '## Historial de entrenamiento', '## Plan actual', '## Progresión y marcas', '## Cómo me está yendo', '## Preferencias', '## Qué quiero cambiar', '## Observaciones']) assert.ok(PROMPT_OTRA_IA.includes(h), h);
+  for (const h of ['## Perfil', '## Historial de entrenamiento', '## Plan actual', '## Sesiones anteriores', '## Progresión y marcas', '## Cómo me está yendo', '## Preferencias', '## Qué quiero cambiar', '## Observaciones']) assert.ok(PROMPT_OTRA_IA.includes(h), h);
   assert.match(PROMPT_OTRA_IA, /No inventes cifras/);
   assert.match(PROMPT_OTRA_IA, /No consta/);
   assert.match(PROMPT_OTRA_IA, /contradictorios|contradicción/);
@@ -31,6 +31,9 @@ test('el prompt cubre todo el contexto útil con la estructura que lee el entren
   assert.match(PROMPT_OTRA_IA, /UN solo bloque de código Markdown/);
   assert.match(PROMPT_OTRA_IA, /No me hagas preguntas/);
   assert.match(PROMPT_OTRA_IA, /No añadas consejos/);
+  assert.match(PROMPT_OTRA_IA, /AAAA-MM-DD/);
+  assert.match(PROMPT_OTRA_IA, /alternando serie a serie/);
+  assert.match(PROMPT_OTRA_IA, /No inventes sesiones, series ni fechas/);
   assert.ok(PROMPT_OTRA_IA.length < MAX_DOC / 4);
 });
 

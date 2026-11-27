@@ -7,6 +7,7 @@
 import * as cloud from './cloud.js';
 import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, onContextFile, onContextInput, planTick, planTrainBanner, planBusy, planResume, weekInfo, todayName, WEEKDAYS } from './plan.js';
 import { suggestLoad, suggestedReps, inferRange, parseRange } from './progression.js';
+import { initSessions, viewSessions, sessionsActive, sessionsBusy, sessionsTick, sessionsLeave, sessionsActions, onSessionsInput, onSessionsChange, onSessionsFile } from './sessions.js';
 
 const STORAGE_KEY = 'gymonkey:v1';
 const REST_OPTIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 240, 300];
@@ -413,7 +414,7 @@ function updateMedia(info) {
 
 let wakeLock = null;
 async function syncWakeLock() {
-  const want = state.settings.wakeLock && (!!state.active || planBusy()) && !document.hidden && 'wakeLock' in navigator;
+  const want = state.settings.wakeLock && (!!state.active || planBusy() || sessionsBusy()) && !document.hidden && 'wakeLock' in navigator;
   try {
     if (want && !wakeLock) {
       wakeLock = await navigator.wakeLock.request('screen');
@@ -501,6 +502,7 @@ function tick() {
   renderBanner(info);
   updateMedia(info);
   planTick();
+  sessionsTick();
 }
 
 /* ---------- vistas ---------- */
@@ -510,7 +512,7 @@ function render() {
   const views = { train: viewTrain, plan: viewPlan, routines: viewRoutines, history: viewHistory, progress: viewProgress };
   renderAccount();
   try {
-    $view.innerHTML = views[tab]();
+    $view.innerHTML = sessionsActive() ? viewSessions() : views[tab]();
   } catch (e) {
     console.error('Error al pintar la pantalla', e);
     $view.innerHTML = '<div class="card error"><p>No se pudo mostrar esta pantalla.</p><button class="primary" data-action="reload">Recargar la app</button></div>';
@@ -541,6 +543,7 @@ function viewTrain() {
         <div class="card stat"><b>${fmtKg(state.workouts.reduce((t, w) => t + workoutVolume(w), 0) / 1000)}</b><span class="muted">toneladas</span></div>
       </div>
       <button class="primary block" data-action="start">+ Entreno vacío</button>
+      <button class="block" style="margin-top:8px" data-action="voice-open">🎙️ Registrar un entreno hablando</button>
       <h2 style="margin-top:20px">Empezar desde una rutina</h2>
       ${routines || '<p class="muted">Crea una rutina en la pestaña Rutinas o genera un plan con IA en la pestaña Plan.</p>'}`;
   }
@@ -603,6 +606,7 @@ function viewTrain() {
     ${a.entries.length > 1 ? '<button class="small" style="margin-bottom:10px" data-action="reorder-start">↕️ Orden y bloques</button>' : ''}
     ${entries || '<div class="empty"><div class="big">💪</div>Añade tu primer ejercicio</div>'}
     <button class="block" data-action="add-exercise">+ Añadir ejercicio</button>
+    <button class="block" style="margin-top:8px" data-action="voice-open-active">🎙️ Dictar series</button>
     <button class="block ghost danger" style="margin-top:12px" data-action="discard">Descartar entreno</button>`;
 }
 
@@ -670,10 +674,14 @@ function viewRoutines() {
 }
 
 function viewHistory() {
+  const tools = `<div class="row wrap" style="margin-bottom:12px">
+    <button class="small" data-action="voice-open">🎙️ Registrar un entreno</button>
+    <button class="small" data-action="import-open">📥 Importar historial</button>
+  </div>`;
   if (!state.workouts.length) {
-    return '<div class="empty"><div class="big">🗓️</div>Aún no has terminado ningún entreno.</div>';
+    return `${tools}<div class="empty"><div class="big">🗓️</div>Aún no has terminado ningún entreno.<br>Registra uno hablando o importa tu historial de otra IA.</div>`;
   }
-  return '<h2>Historial</h2>' + [...state.workouts].reverse().map((w) => `
+  return `<h2>Historial</h2>${tools}` + [...state.workouts].reverse().map((w) => `
     <div class="card">
       <div class="row between">
         <div><h3>${esc(w.name)}</h3><span class="muted">${fmtDate(w.start)} · ${fmtDuration(w.end - w.start)} · ${fmtKg(workoutVolume(w))} kg</span></div>
@@ -1088,7 +1096,11 @@ function commit() { save(); render(); }
 
 document.addEventListener('click', (ev) => {
   const tabBtn = ev.target.closest('[data-tab]');
-  if (tabBtn) { tab = tabBtn.dataset.tab; render(); window.scrollTo(0, 0); return; }
+  if (tabBtn) {
+    const go = () => { tab = tabBtn.dataset.tab; render(); window.scrollTo(0, 0); };
+    if (sessionsActive()) sessionsLeave(go); else go();
+    return;
+  }
   const el = ev.target.closest('[data-action]');
   if (!el || el.tagName === 'SELECT') return;
   const fn = actions[el.dataset.action];
@@ -1146,6 +1158,7 @@ document.addEventListener('input', (ev) => {
   const el = ev.target;
   if (el.dataset.edit) { onPlanInput(el); return; }
   if (el.dataset.ctxdoc !== undefined) { onContextInput(el); return; }
+  if (el.dataset.svtext !== undefined || el.dataset.sv !== undefined) { onSessionsInput(el); return; }
   if (!el.dataset.field || !state.active) return;
   const set = state.active.entries[+el.dataset.e].sets[+el.dataset.s];
   set[el.dataset.field] = el.value;
@@ -1159,6 +1172,8 @@ document.addEventListener('input', (ev) => {
 
 document.addEventListener('change', (ev) => {
   if (ev.target.matches?.('input[data-ctx-file]')) { onContextFile(ev.target); return; }
+  if (ev.target.matches?.('input[data-sv-file]')) { onSessionsFile(ev.target); return; }
+  if (ev.target.dataset?.svInc !== undefined) { onSessionsChange(ev.target); return; }
   if (ev.target.dataset.action === 'pick-progress') {
     progressExerciseId = ev.target.value;
     render();
@@ -1274,7 +1289,7 @@ function renderAccount() {
     ${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">` : initial}</button>`;
 }
 
-Object.assign(actions, planActions, {
+Object.assign(actions, planActions, sessionsActions, {
   reload() { location.reload(); return false; },
   'sign-in'() {
     cloud.signIn().catch((e) => toast(`No se pudo iniciar sesión: ${e.message}`));
@@ -1323,6 +1338,13 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
+
+initSessions({
+  state: () => state,
+  uid, esc, ask, toast, fmtSecs, render, commit,
+  newEntry: (id) => newEntry(id),
+  setTab: (t) => { tab = t; },
+});
 
 initPlan({
   state: () => state,

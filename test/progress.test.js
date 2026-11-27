@@ -44,3 +44,15 @@ test('preguntas y tamaño esperado', () => {
   assert.ok(questionsProgress('x'.repeat(750)).pct > 40);
   assert.ok(expectedChars({ weeks: 12, days: ['a', 'b', 'c'], minutes: 60 }) > expectedChars({ weeks: 4, days: ['a'], minutes: 30 }));
 });
+
+import { sessionsProgress } from '../lib/progress.js';
+
+test('progreso del registro de sesiones: sube con lo escrito y nombra la fase', () => {
+  assert.match(sessionsProgress('', { thinking: false }).phase, /Conectando/);
+  assert.match(sessionsProgress('', { thinking: true }).phase, /Leyendo/);
+  const a = sessionsProgress('{"sessions":[{"date":"2026-11-20","entries":[', { expected: 3000 });
+  const b = sessionsProgress('x'.repeat(1500), { expected: 3000 });
+  assert.ok(b.pct > a.pct && b.pct < 95);
+  assert.match(sessionsProgress('"entries":[] "entries":[] "entries":[', { expected: 3000 }).phase, /3 hasta ahora/);
+  assert.equal(sessionsProgress('x'.repeat(100000), { expected: 3000 }).pct, 95);
+});

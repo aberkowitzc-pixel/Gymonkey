@@ -46,6 +46,16 @@ Estructura del documento:
 
 (Repite "### Día N" para cada día de entrenamiento.)
 
+## Sesiones anteriores
+Las sesiones concretas que recuerdes, de la más antigua a la más reciente, con su fecha (AAAA-MM-DD) y las series reales (peso × repeticiones). Por ejemplo:
+
+### 2026-11-20 — Torso A (60 min)
+- Press de banca: 60×8, 60×8, 60×7
+- Remo con barra: 50×10, 50×10, 50×9
+- Plancha: 45 s, 40 s, 40 s
+
+Si dos ejercicios se hicieron alternando serie a serie, indícalo (por ejemplo, "[alternado con Remo con barra]"). Si no sabes la fecha exacta, escribe la aproximada y márcala como "(aprox.)". No inventes sesiones, series ni fechas.
+
 ## Progresión y marcas
 - Para cada ejercicio principal, la evolución peso × repeticiones con fechas o semanas, de la más antigua a la más reciente (y 1RM estimados si los calculaste):
 

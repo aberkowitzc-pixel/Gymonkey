@@ -137,6 +137,25 @@ export function buildPlan(p) {
 }
 
 export async function demoAI(mode, input, onProgress) {
+  if (mode === 'sessions') {
+    await fakeProgress(onProgress, ['Leyendo lo que has contado…', 'Ordenando tus series…'], 1500);
+    const lib = input.library || [];
+    const pick = (re, fallback) => lib.find((n) => re.test(n)) || fallback;
+    const ex = (exercise, weight, reps, block = '') => ({ exercise, muscle_group: 'Piernas', type: 'reps', block, notes: '', sets: [0, 1, 2].map(() => ({ weight_kg: weight, reps, complete: true })) });
+    const first = ex(pick(/sentadilla/i, 'Sentadilla'), 80, 6, 'A');
+    const second = ex('Landmine press', 25, 10, 'A');
+    if (input.draft) {
+      const sessions = input.draft.sessions.map((s) => ({ ...s, entries: s.entries.map((e) => ({ ...e, sets: e.sets.map((t) => ({ ...t, reps: t.reps || 8, complete: true })) })) }));
+      return { message: 'Listo, he actualizado la sesión con tus respuestas (modo demo).', sessions, questions: [] };
+    }
+    const today = input.today;
+    second.sets[2] = { weight_kg: 25, reps: 0, complete: false };
+    return {
+      message: 'Modo demo: he creado una sesión de ejemplo (la IA real interpreta lo que cuentas).',
+      sessions: [{ date: today, name: 'Entreno (demo)', duration_minutes: 55, notes: '', entries: [first, second] }],
+      questions: [{ id: 'q1', question: '¿Cuántas repeticiones hiciste en la tercera serie de Landmine press?', options: ['8', '10', '12'] }],
+    };
+  }
   if (mode === 'questions') await fakeProgress(onProgress, ['Pensando qué preguntarte…', 'Redactando las preguntas…'], 1200);
   else await fakeProgress(onProgress, ['Analizando tu perfil y la evidencia…', 'Redactando el resumen y los principios…', 'Diseñando el mesociclo 1…', 'Diseñando el mesociclo 2…', 'Añadiendo reglas de progresión y notas…'], 4000);
   const p = input.profile || {};

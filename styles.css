@@ -327,3 +327,13 @@ details.ctx textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospa
 .sets tr.next td { background: color-mix(in srgb, var(--block, var(--accent)) 16%, transparent); }
 .sets tr.next td:first-child { color: var(--block, var(--accent)); font-weight: 700; border-radius: 8px 0 0 8px; }
 .sets tr.next td:last-child { border-radius: 0 8px 8px 0; }
+
+/* ---------- v6: dictado e importación de sesiones ---------- */
+details.sess > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
+details.sess > summary::-webkit-details-marker { display: none; }
+.sess-head { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; cursor: pointer; }
+.sess-head input { width: 22px; height: 22px; flex: none; accent-color: var(--accent); }
+.sess-head small { font-size: 0.8rem; }
+.pill.warn { background: color-mix(in srgb, #f59e0b 24%, var(--card)); color: var(--text); }
+.svent { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+.sets tr.warn td { background: color-mix(in srgb, #f59e0b 18%, transparent); }
