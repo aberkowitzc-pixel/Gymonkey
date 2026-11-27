@@ -7,7 +7,9 @@
 import * as cloud from './cloud.js';
 import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, onContextFile, onContextInput, planTick, planTrainBanner, planBusy, planResume, planWeekLabel, weekInfo, todayName, WEEKDAYS } from './plan.js';
 import { suggestLoad, suggestedReps, inferRange, parseRange } from './progression.js';
-import { buildWeeks, shortName } from './calendar.js';
+import { buildWeeks, shortName, isoLocal } from './calendar.js';
+import { buildWeekContext, hasDeficit, moveOptions, setMove, adjustmentsFor, pruneSchedule } from './weekplan.js';
+import { initWeek, viewWeek, weekActive, weekBusy, weekTick, weekLeave, weekActions, onWeekChange } from './week.js';
 import { matchExercise, mergeExercises, findDuplicates } from './exercises.js';
 import { initSessions, viewSessions, sessionsActive, sessionsBusy, sessionsTick, sessionsLeave, sessionsActions, onSessionsInput, onSessionsChange, onSessionsFile } from './sessions.js';
 
@@ -54,6 +56,8 @@ function defaultState() {
     active: null,
     profile: null,
     plan: null,
+    moves: [],
+    adjust: [],
     meta: { deletedWorkouts: [] },
   };
 }
@@ -65,7 +69,10 @@ function migrate(s) {
   if (s.active && s.active.timer === undefined) s.active.timer = null;
   s.profile ??= null;
   s.plan ??= null;
+  s.moves ??= [];
+  s.adjust ??= [];
   s.meta = { deletedWorkouts: [], ...(s.meta || {}) };
+  pruneSchedule(s);
   return s;
 }
 
@@ -417,7 +424,7 @@ function updateMedia(info) {
 
 let wakeLock = null;
 async function syncWakeLock() {
-  const want = state.settings.wakeLock && (!!state.active || planBusy() || sessionsBusy()) && !document.hidden && 'wakeLock' in navigator;
+  const want = state.settings.wakeLock && (!!state.active || planBusy() || sessionsBusy() || weekBusy()) && !document.hidden && 'wakeLock' in navigator;
   try {
     if (want && !wakeLock) {
       wakeLock = await navigator.wakeLock.request('screen');
@@ -506,6 +513,7 @@ function tick() {
   updateMedia(info);
   planTick();
   sessionsTick();
+  weekTick();
 }
 
 /* ---------- vistas ---------- */
@@ -515,7 +523,7 @@ function render() {
   const views = { train: viewTrain, plan: viewPlan, routines: viewRoutines, history: viewHistory, progress: viewProgress };
   renderAccount();
   try {
-    $view.innerHTML = sessionsActive() ? viewSessions() : views[tab]();
+    $view.innerHTML = weekActive() ? viewWeek() : sessionsActive() ? viewSessions() : views[tab]();
   } catch (e) {
     console.error('Error al pintar la pantalla', e);
     $view.innerHTML = '<div class="card error"><p>No se pudo mostrar esta pantalla.</p><button class="primary" data-action="reload">Recargar la app</button></div>';
@@ -553,8 +561,85 @@ function suggestHTML(sg, exerciseId) {
 }
 
 /** Hoy + esta semana y la próxima: qué toca, qué hiciste y qué falta. */
+const calWeeks = () => buildWeeks({ now: Date.now(), routines: state.routines, workouts: state.workouts, moves: state.moves });
+const calCell = (iso) => calWeeks().flatMap((w) => w.days).find((d) => d.iso === iso);
+const dayLabel = (d) => `${d.weekday.slice(0, 3).toLowerCase()} ${d.date.getDate()}`;
+
+/** Datos de la semana para que la IA decida si hay que compensar. */
+function weekCtx() {
+  const weeks = calWeeks();
+  return buildWeekContext({ now: Date.now(), weeks, workouts: state.workouts, exercises: state.exercises, planWeek: planWeekLabel(Date.now()) });
+}
+
+/** Lo que quedó pendiente esta semana: sesiones sin hacer, ejercicios sin hacer y, si procede, la revisión con IA. */
+function pendingCard(weeks) {
+  const days = weeks[0].days;
+  const missed = days.filter((d) => d.status === 'missed');
+  const partial = days.filter((d) => d.status === 'partial' && d.workout?.skipped?.length);
+  const review = state.plan && hasDeficit(weekCtx());
+  if (!missed.length && !partial.length && !review) return '';
+  return `<div class="card pending stack">
+    <b>Pendiente esta semana</b>
+    ${missed.map((d) => `<div class="row between pend"><span>${esc(d.routine.name)} <span class="muted">· ${dayLabel(d)}</span></span><span class="row"><button class="small" data-action="cal-move" data-iso="${d.iso}">Reprogramar</button><button class="small ghost" data-action="cal-skip" data-iso="${d.iso}">Saltar</button></span></div>`).join('')}
+    ${partial.map((d) => `<div class="row between pend"><span>${esc(d.routine.name)} <span class="muted">· faltó ${d.workout.skipped.length}</span></span><button class="small" data-action="start-rest" data-id="${d.workout.id}">Hacer lo que falta</button></div>`).join('')}
+    ${review ? '<button class="small block" data-action="week-review">💬 Revisar la semana con IA</button>' : ''}
+  </div>`;
+}
+
+/** Aplica a una sesión recién empezada los ajustes de compensación de esta semana. */
+function applyAdjustments(r) {
+  const a = state.active;
+  const adjIds = [];
+  for (const x of adjustmentsFor(state, r.name)) {
+    if (x.kind === 'add_sets') {
+      const entry = a.entries.find((e) => matchExercise(x.exercise, [exById(e.exerciseId)].filter(Boolean)));
+      if (!entry) continue;
+      const last = entry.sets.at(-1);
+      for (let i = 0; i < x.sets; i++) entry.sets.push({ w: last?.w ?? '', r: last?.r ?? '', done: false, sug: true });
+      if (entry.target) entry.target.sets += x.sets;
+      entry.adj = `+${(entry.adjSets = (entry.adjSets || 0) + x.sets)} serie${entry.adjSets > 1 ? 's' : ''}`;
+    } else {
+      let ex = matchExercise(x.exercise, state.exercises)?.exercise;
+      if (!ex) { ex = { id: uid(), name: x.exercise.trim(), muscle: x.muscle_group || 'Otros', type: x.exercise_type === 'time' ? 'time' : 'reps' }; state.exercises.push(ex); }
+      const entry = newEntry(ex.id, { sets: x.sets, reps: x.reps, rir: x.rir, rest: x.rest_seconds, notes: x.reason });
+      entry.adj = 'Añadido';
+      a.entries.push(entry);
+    }
+    adjIds.push(x.id);
+  }
+  if (adjIds.length) a.adjIds = adjIds;
+}
+
+function moveDialog(cell) {
+  const weeks = calWeeks();
+  const today = isoLocal(Date.now());
+  const opts = moveOptions(weeks, cell, today);
+  const endWeek = weeks[0].days[6].iso;
+  const row = (o) => `<label><input type="radio" name="to" value="${o.iso}" required><span>${o.weekday} ${o.date.getDate()}${o.iso === today ? ' · hoy' : ''} <span class="muted">· ${o.swapWith ? `intercambiar con ${esc(o.swapWith.name)}` : 'libre'}</span></span></label>`;
+  const a = opts.filter((o) => o.iso <= endWeek), b = opts.filter((o) => o.iso > endWeek);
+  openDialog(`
+    <h2>Mover ${esc(cell.routine.name)}</h2>
+    <div class="pick-list">
+      ${a.length ? `<small class="muted">Esta semana</small>${a.map(row).join('')}` : ''}
+      ${b.length ? `<small class="muted">Próxima semana</small>${b.map(row).join('')}` : ''}
+    </div>
+    ${dialogButtons('Mover')}`,
+  (fd) => {
+    const to = fd.get('to');
+    if (!to) return false;
+    setMove(state, cell, to, calCell);
+    commit();
+    const dest = calCell(to);
+    toast(`Movida al ${dest ? dayLabel(dest) : to}`);
+  });
+}
+
+function skipSession(cell) {
+  ask(`¿Saltar «${cell.routine.name}» (${dayLabel(cell)})? Seguirás con el plan sin recuperarla.`, 'Saltar', () => { setMove(state, cell, null, calCell); commit(); });
+}
+
 function viewCalendar() {
-  const weeks = buildWeeks({ now: Date.now(), routines: state.routines, workouts: state.workouts });
+  const weeks = calWeeks();
   if (!weeks.some((w) => w.days.some((d) => d.routine))) return '';
   const today = weeks[0].days.find((d) => d.isToday);
   const n = (r) => r.exerciseIds.filter(exById).length;
@@ -568,19 +653,19 @@ function viewCalendar() {
   } else {
     hoy = `<div class="card today-card"><b>Hoy no toca entrenar</b></div>`;
   }
-  const sym = { done: '✓', partial: '◐', missed: '–', planned: '', extra: '•', rest: '' };
+  const sym = { done: '✓', partial: '◐', missed: '–', planned: '', extra: '•', rest: '', moved: '↪', skipped: '⏭' };
   const cell = (d) => {
-    const label = d.routine ? shortName(d.routine.name) : d.status === 'extra' ? shortName(d.extra.name) : '';
-    const click = d.routine || d.extra;
+    const label = d.routine ? shortName(d.routine.name) : d.status === 'extra' ? shortName(d.extra.name) : d.status === 'moved' ? `→ ${Number(d.movedTo.slice(8))}` : d.status === 'skipped' ? 'saltada' : '';
+    const click = d.routine || d.extra || d.status === 'moved' || d.status === 'skipped';
     return `<button class="cal-day ${d.status} ${d.isToday ? 'today' : ''}" ${click ? `data-action="cal-day" data-iso="${d.iso}"` : 'disabled'} aria-label="${d.weekday} ${d.date.getDate()}${label ? `, ${esc(label)}` : ''}">
-      <small>${'LMXJVSD'[d.idx]}</small><b>${d.date.getDate()}</b><i>${sym[d.status]}</i><em>${esc(label)}</em></button>`;
+      <small>${'LMXJVSD'[d.idx]}</small><b>${d.date.getDate()}</b><i>${d.movedFrom && d.status === 'planned' ? '↪' : sym[d.status]}</i><em>${esc(label)}</em></button>`;
   };
   const grid = weeks.map((w, i) => {
     const lab = planWeekLabel(w.days[0].date.getTime());
     return `<div class="cal-head"><b>${i === 0 ? 'Esta semana' : 'Próxima'}</b><span class="muted">${lab ? esc(lab.text) : ''}</span>${lab?.deload ? '<span class="pill">Descarga</span>' : ''}</div>
       <div class="cal-grid">${w.days.map(cell).join('')}</div>`;
   }).join('');
-  return `${hoy}<div class="cal">${grid}</div>`;
+  return `${hoy}${pendingCard(weeks)}<div class="cal">${grid}</div>`;
 }
 
 function viewTrain() {
@@ -633,7 +718,7 @@ function viewTrain() {
     return `
       <div class="card ${g ? 'grouped' : ''}" ${g ? `style="--block:${blockColor(a.entries, e.group)}"` : ''}>
         <div class="row between">
-          <h3>${esc(exName(e.exerciseId))}</h3>
+          <h3>${esc(exName(e.exerciseId))}${e.adj ? ` <span class="pill">${esc(e.adj)}</span>` : ''}</h3>
           <div class="row">
             <button class="ghost small" data-action="set-rest" data-e="${ei}" aria-label="Cambiar descanso">⏱ ${fmtSecs(restForEntry(e))}</button>
             <button class="ghost danger" data-action="remove-entry" data-e="${ei}" aria-label="Quitar ejercicio">✕</button>
@@ -934,7 +1019,7 @@ function workoutFromActive(a, { typed, sugs }) {
     const sets = e.sets.filter(include).map(({ sug, ...s }) => ({ ...s, done: true }));
     if (sets.length) { entries.push({ ...e, sets, planned: e.sets.length }); got += sets.length; } else skipped.push(e.exerciseId);
   });
-  return { id: uid(), name: a.name, start: a.start, end: Date.now(), entries, routineId: a.routineId, skipped, partial: skipped.length > 0 || got < planned };
+  return { id: uid(), name: a.name, start: a.start, end: Date.now(), entries, routineId: a.routineId, skipped, partial: skipped.length > 0 || got < planned, ...(a.remainderOf ? { remainderOf: a.remainderOf } : {}) };
 }
 
 function confirmMerge(fromId, toId) {
@@ -964,6 +1049,21 @@ const actions = {
       routineId: r?.id,
       start: Date.now(),
       entries: r ? r.exerciseIds.filter(exById).map((exId) => newEntry(exId, r.targets?.[exId], { deload: !!(r.fromPlan && weekInfo(state.plan)?.wp?.deload) })) : [],
+      timer: null,
+    };
+    if (r) applyAdjustments(r);
+  },
+  // Empezar solo lo que quedó sin hacer en una sesión parcial.
+  'start-rest'(id) {
+    const w = state.workouts.find((x) => x.id === id);
+    if (!w?.skipped?.length) return false;
+    const r = state.routines.find((x) => x.id === w.routineId);
+    state.active = {
+      name: `${w.name} · lo que faltó`,
+      routineId: w.routineId,
+      remainderOf: w.id,
+      start: Date.now(),
+      entries: w.skipped.filter(exById).map((exId) => newEntry(exId, r?.targets?.[exId], { deload: !!(r?.fromPlan && weekInfo(state.plan)?.wp?.deload) })),
       timer: null,
     };
   },
@@ -1101,6 +1201,17 @@ const actions = {
       if (!w.entries.length) { toast(sm.sugs ? 'Marca las series que hiciste para guardarlas' : 'No hay series que guardar'); return false; }
       state.workouts.push(w);
       state.workouts.sort((x, y) => x.start - y.start);
+      // Los ajustes de la semana que se aplicaron a este entreno ya están hechos.
+      (state.adjust || []).forEach((x) => { if (a.adjIds?.includes(x.id)) x.consumed = true; });
+      // Si era "lo que faltó", la sesión original deja de estar pendiente en lo que ya se hizo.
+      if (a.remainderOf) {
+        const orig = state.workouts.find((x) => x.id === a.remainderOf);
+        if (orig) {
+          const did = new Set(w.entries.map((e) => e.exerciseId));
+          orig.skipped = (orig.skipped || []).filter((id) => !did.has(id));
+          if (!orig.skipped.length) orig.partial = false;
+        }
+      }
       state.active = null;
       clearNotes();
       tab = 'train';
@@ -1111,7 +1222,7 @@ const actions = {
   },
   // ---- calendario de la pestaña Entrenar
   'cal-day'(_, el) {
-    const day = buildWeeks({ now: Date.now(), routines: state.routines, workouts: state.workouts }).flatMap((w) => w.days).find((d) => d.iso === el.dataset.iso);
+    const day = calCell(el.dataset.iso);
     if (!day) return false;
     const title = `${day.weekday} ${day.date.getDate()}`;
     const r = day.routine;
@@ -1120,20 +1231,42 @@ const actions = {
         const t = r.targets?.[id];
         return `<li>${esc(exName(id))}${t ? ` <span class="muted">${t.sets}×${esc(t.reps)}</span>` : ''}</li>`;
       }).join('');
-      const done = day.workout ? `<p class="muted">${day.status === 'partial' ? '◐ Sesión parcial' : '✓ Hecho'}${day.movedTo ? ` · el ${fmtDate(day.workout.start)}` : ''}</p>` : '';
+      const adj = adjustmentsFor(state, r.name, day.date.getTime()).map((x) => `<li class="muted">＋ ${x.kind === 'add_sets' ? `${x.sets} serie${x.sets > 1 ? 's' : ''} de ${esc(x.exercise)}` : `${esc(x.exercise)} ${x.sets}×${esc(x.reps)}`}</li>`).join('');
+      const note = day.workout
+        ? `<p class="muted">${day.status === 'partial' ? '◐ Sesión parcial' : '✓ Hecho'}${day.doneOn ? ` · el ${fmtDate(day.workout.start)}` : ''}</p>`
+        : day.movedFrom ? `<p class="muted">↪ Movida desde el ${dayLabel(calCell(day.movedFrom) || { weekday: day.movedFrom, date: new Date() })}</p>` : '';
+      const canMove = !day.workout;
       openDialog(`
         <h2>${title} · ${esc(r.name)}</h2>
-        ${done}
-        <ul class="exlist">${items}</ul>
+        ${note}
+        <ul class="exlist">${items}${adj}</ul>
         <div class="stack" style="margin-top:12px">
-          <button class="block primary" value="start">${day.workout ? 'Hacerlo otra vez' : 'Empezar'}</button>
+          <button class="block primary" value="start">${day.workout ? 'Hacerlo otra vez' : day.status === 'missed' ? 'Hacerlo ahora' : 'Empezar'}</button>
+          ${day.status === 'partial' && day.workout?.skipped?.length ? '<button class="block" value="rest">Hacer lo que faltó</button>' : ''}
+          ${canMove ? '<button class="block" value="move">📅 Mover a otro día</button><button class="block" value="skip">Saltar esta sesión</button>' : ''}
+          ${day.movedFrom && !day.workout ? '<button class="block ghost" value="back">Volver a su día</button>' : ''}
           ${day.workout ? '<button class="block" value="history">Ver en historial</button>' : ''}
           <button class="block ghost" value="cancel" formnovalidate>Cerrar</button>
         </div>`,
       (fd, _f, value) => {
         if (value === 'start') { actions.start(r.id); commit(); }
+        else if (value === 'rest') { actions['start-rest'](day.workout.id); commit(); }
+        else if (value === 'move') moveDialog(day);
+        else if (value === 'skip') skipSession(day);
+        else if (value === 'back') { setMove(state, day, day.movedFrom, calCell); commit(); }
         else if (value === 'history') { tab = 'history'; render(); window.scrollTo(0, 0); }
       });
+    } else if (day.status === 'moved' || day.status === 'skipped') {
+      const mv = (state.moves || []).find((m) => m.from === day.iso);
+      const dest = day.movedTo ? calCell(day.movedTo) : null;
+      openDialog(`
+        <h2>${title} · ${esc(mv?.name || 'Sesión')}</h2>
+        <p class="muted">${day.status === 'skipped' ? '⏭ Sesión saltada' : `↪ Movida al ${dest ? dayLabel(dest) : day.movedTo}`}</p>
+        <div class="stack" style="margin-top:12px">
+          <button class="block primary" value="restore">${day.status === 'skipped' ? 'Recuperar la sesión' : 'Volver a este día'}</button>
+          <button class="block ghost" value="cancel" formnovalidate>Cerrar</button>
+        </div>`,
+      () => { state.moves = state.moves.filter((m) => m !== mv); commit(); });
     } else if (day.extra) {
       openDialog(`
         <h2>${title} · ${esc(day.extra.name)}</h2>
@@ -1146,6 +1279,8 @@ const actions = {
     }
     return false;
   },
+  'cal-move'(_, el) { const c = calCell(el.dataset.iso); if (c?.routine) moveDialog(c); return false; },
+  'cal-skip'(_, el) { const c = calCell(el.dataset.iso); if (c?.routine) skipSession(c); return false; },
   // ---- unir ejercicios duplicados
   'merge-pair'(_, el) {
     const [a, b] = [el.dataset.a, el.dataset.b];
@@ -1280,7 +1415,7 @@ document.addEventListener('click', (ev) => {
   const tabBtn = ev.target.closest('[data-tab]');
   if (tabBtn) {
     const go = () => { tab = tabBtn.dataset.tab; render(); window.scrollTo(0, 0); };
-    if (sessionsActive()) sessionsLeave(go); else go();
+    if (weekActive()) weekLeave(go); else if (sessionsActive()) sessionsLeave(go); else go();
     return;
   }
   const el = ev.target.closest('[data-action]');
@@ -1356,6 +1491,7 @@ document.addEventListener('change', (ev) => {
   if (ev.target.matches?.('input[data-ctx-file]')) { onContextFile(ev.target); return; }
   if (ev.target.matches?.('input[data-sv-file]')) { onSessionsFile(ev.target); return; }
   if (ev.target.dataset?.svInc !== undefined) { onSessionsChange(ev.target); return; }
+  if (ev.target.dataset?.wkAct !== undefined) { onWeekChange(ev.target); return; }
   if (ev.target.dataset.action === 'pick-progress') {
     progressExerciseId = ev.target.value;
     render();
@@ -1471,7 +1607,7 @@ function renderAccount() {
     ${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">` : initial}</button>`;
 }
 
-Object.assign(actions, planActions, sessionsActions, {
+Object.assign(actions, planActions, sessionsActions, weekActions, {
   reload() { location.reload(); return false; },
   'sign-in'() {
     cloud.signIn().catch((e) => toast(`No se pudo iniciar sesión: ${e.message}`));
@@ -1519,6 +1655,12 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
+
+initWeek({
+  state: () => state,
+  uid, esc, ask, toast, fmtSecs, render, commit,
+  weekContext: weekCtx,
+});
 
 initSessions({
   state: () => state,

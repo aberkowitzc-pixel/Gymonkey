@@ -44,23 +44,48 @@ export function shortName(name = '') {
   return parts.length > 1 && parts[1].length === 1 ? `${parts[0]} ${parts[1]}` : parts[0];
 }
 
+/** Fecha original de una sesión: si fue movida a este día, la del plan; si no, la del propio día. */
+export const originalDate = (cell) => cell.movedFrom || cell.iso;
+
 /**
  * Semanas del calendario (por defecto, esta y la siguiente), de lunes a domingo.
- * Estado de cada día: done · partial · missed · planned · extra (entreno fuera de plan) · rest.
+ * Estado de cada día: done · partial · missed · planned · moved (la sesión se movió a otro día) ·
+ * skipped (saltada) · extra (entreno fuera de plan) · rest.
+ * `moves` reprograma sesiones sin tocar el plan: { name, from, to } (to = null: saltada).
  * Un entreno de una rutina hecho otro día de esa misma semana cuenta para su día previsto.
  */
-export function buildWeeks({ now = Date.now(), routines = [], workouts = [], weeks = 2 }) {
+export function buildWeeks({ now = Date.now(), routines = [], workouts = [], weeks = 2, moves = [] }) {
   const planned = routines.filter((r) => r.fromPlan && r.weekday);
   const start = mondayOf(now);
   const todayISO = isoLocal(now);
+
+  const all = [];
+  for (let i = 0; i < weeks * 7; i++) {
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+    all.push({ date, iso: isoLocal(date), idx: i % 7, weekday: WEEKDAYS[i % 7] });
+  }
+  const base = {};
+  all.forEach((d) => { base[d.iso] = planned.find((r) => r.weekday === d.weekday) || null; });
+
+  // Movimientos válidos: la sesión existe ese día; el destino está libre (o también se mueve: intercambio); un solo aterrizaje por día.
+  const valid = moves.filter((m) => m.from && base[m.from]?.name === m.name);
+  const fromSet = new Set(valid.map((m) => m.from));
+  const landing = {}, away = {};
+  for (const m of valid) {
+    if (away[m.from]) continue;
+    if (m.to) {
+      if ((base[m.to] && !fromSet.has(m.to)) || landing[m.to]) continue;
+      landing[m.to] = { routine: base[m.from], from: m.from };
+    }
+    away[m.from] = { to: m.to || null };
+  }
+  const routineAt = {};
+  all.forEach((d) => { routineAt[d.iso] = landing[d.iso]?.routine ?? (away[d.iso] ? null : base[d.iso]); });
+
   const out = [];
   for (let wk = 0; wk < weeks; wk++) {
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(start);
-      date.setDate(start.getDate() + wk * 7 + i);
-      days.push({ date, iso: isoLocal(date), idx: i, weekday: WEEKDAYS[i] });
-    }
+    const days = all.slice(wk * 7, wk * 7 + 7);
     const inWeek = workouts.filter((w) => { const iso = isoLocal(w.start); return iso >= days[0].iso && iso <= days[6].iso; });
     const used = new Set();
     const claim = (day, routine) => {
@@ -70,19 +95,21 @@ export function buildWeeks({ now = Date.now(), routines = [], workouts = [], wee
       return w;
     };
     const cells = days.map((day) => {
-      const routine = planned.find((r) => r.weekday === day.weekday) || null;
-      return { ...day, routine, workout: routine ? claim(day, routine) : null };
+      const routine = routineAt[day.iso];
+      return { ...day, routine, movedFrom: landing[day.iso]?.from || null, workout: routine ? claim(day, routine) : null };
     });
     cells.forEach((c) => {
       c.isToday = c.iso === todayISO;
       c.isPast = c.iso < todayISO;
       if (c.routine) {
         c.status = c.workout ? (c.workout.partial ? 'partial' : 'done') : c.isPast ? 'missed' : 'planned';
-        c.movedTo = c.workout && isoLocal(c.workout.start) !== c.iso ? isoLocal(c.workout.start) : null;
+        c.doneOn = c.workout && isoLocal(c.workout.start) !== c.iso ? isoLocal(c.workout.start) : null;
       } else {
         const own = inWeek.filter((w) => isoLocal(w.start) === c.iso && !used.has(w));
         c.extra = own[0] || null;
-        c.status = own.length ? 'extra' : 'rest';
+        const a = away[c.iso];
+        if (a) { c.status = a.to ? 'moved' : 'skipped'; c.movedTo = a.to; }
+        else c.status = own.length ? 'extra' : 'rest';
       }
     });
     out.push({ monday: days[0].date, days: cells });

@@ -176,7 +176,7 @@ async function runAI(text, fn) {
   }
 }
 
-function aiProfile() {
+export function aiProfile() {
   const { context_doc, ...p } = S().profile || {};
   return { ...p, goal: label(GOALS, p.goal), experience: label(LEVELS, p.experience) };
 }
@@ -184,7 +184,7 @@ const profileDoc = () => (S().profile?.context_doc || '').trim();
 const library = () => S().exercises.map((e) => e.name);
 const planForAI = (plan) => Object.fromEntries(PLAN_FIELDS.map((k) => [k, plan[k]]));
 
-function trainingSummary() {
+export function trainingSummary() {
   return S().workouts.slice(-8).map((w) => ({
     date: new Date(w.start).toISOString().slice(0, 10),
     routine: w.name,
@@ -768,6 +768,19 @@ export const planActions = {
 };
 
 /** Aviso del plan en la pestaña Entrenar. */
+/** Datos del plan que necesita la IA para revisar la semana. */
+export function planBrief() {
+  const plan = S().plan;
+  if (!plan) return {};
+  const wi = weekInfo(plan);
+  const m = wi && plan.mesocycles[wi.meso];
+  return {
+    title: plan.title, split: plan.split, days_per_week: plan.days_per_week, session_minutes: plan.session_minutes, total_weeks: plan.total_weeks,
+    current_week: wi?.week, deload: !!wi?.wp?.deload, week_guidance: wi?.wp?.guidance || '',
+    mesocycle: m ? { name: m.name, focus: m.focus, intensity: m.intensity } : null,
+  };
+}
+
 export function planTrainBanner() {
   const plan = S().plan;
   const wi = weekInfo(plan);

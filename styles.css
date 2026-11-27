@@ -398,3 +398,18 @@ details.ctx textarea { margin-top: 8px; }
 .link-hint { margin-top: 6px; font-size: 0.85rem; color: var(--muted); }
 .link-hint b { color: var(--text); }
 button.link { text-align: left; }
+
+/* ---------- v9: reprogramar y revisar la semana ---------- */
+.cal-day.moved { border-style: dashed; border-color: var(--line); opacity: 0.75; }
+.cal-day.moved i, .cal-day.skipped i { color: var(--muted); }
+.cal-day.skipped { opacity: 0.5; }
+.pending { border-color: #f59e0b; }
+.pend { gap: 8px; align-items: center; }
+.pend > span:first-child { min-width: 0; }
+.act { padding: 4px 0; }
+.act label { gap: 10px; align-items: flex-start; }
+.act input[type="checkbox"] { width: 22px; height: 22px; flex: none; accent-color: var(--accent); margin-top: 1px; }
+.act + .act { border-top: 1px solid var(--line); padding-top: 10px; }
+
+.pick-list input[type="radio"] { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
+.pick-list > small { display: block; margin-top: 8px; }

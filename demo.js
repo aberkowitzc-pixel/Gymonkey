@@ -137,6 +137,19 @@ export function buildPlan(p) {
 }
 
 export async function demoAI(mode, input, onProgress) {
+  if (mode === 'review') {
+    await fakeProgress(onProgress, ['Revisando tu semana…', 'Valorando qué falta…'], 1400);
+    const c = input.context;
+    const missed = c.days.find((d) => d.status === 'missed');
+    const free = c.free_days[0];
+    if (missed && free) {
+      return {
+        message: 'Modo demo: te quedó una sesión sin hacer; propongo moverla a un día libre de esta semana.', verdict: 'reprogramar',
+        actions: [{ kind: 'move_session', session: missed.session, from_date: missed.date, to_date: free.date, exercise: '', muscle_group: '', exercise_type: 'reps', sets: 0, reps: '', rir: '', rest_seconds: 0, reason: 'Hay un día libre y así mantienes la frecuencia.' }],
+      };
+    }
+    return { message: 'Modo demo: no hace falta cambiar nada esta semana.', verdict: 'sin_cambios', actions: [] };
+  }
   if (mode === 'sessions') {
     await fakeProgress(onProgress, ['Leyendo lo que has contado…', 'Ordenando tus series…'], 1500);
     const lib = input.library || [];
