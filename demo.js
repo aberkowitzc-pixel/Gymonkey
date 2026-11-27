@@ -4,6 +4,16 @@
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Simula el avance de la IA: sube poco a poco con frases como las reales. */
+async function fakeProgress(onProgress, phases, ms) {
+  if (!onProgress) { await wait(ms); return; }
+  const step = ms / phases.length;
+  for (let i = 0; i < phases.length; i++) {
+    onProgress({ pct: Math.round(((i + 1) / (phases.length + 1)) * 95), phase: phases[i] });
+    await wait(step);
+  }
+}
+
 const has = (p, item) => (p.equipment || []).includes(item);
 
 function exerciseBank(p) {
@@ -13,7 +23,7 @@ function exerciseBank(p) {
   const machines = has(p, 'Máquinas guiadas');
   const pullup = has(p, 'Barra de dominadas');
   const e = (name, muscle_group, sets, reps, rir, rest_seconds, notes = '', alternatives = [], type = 'reps') =>
-    ({ name, muscle_group, type, sets, reps, rir, rest_seconds, notes, alternatives });
+    ({ name, muscle_group, type, sets, reps, rir, rest_seconds, start_load_kg: 0, notes, alternatives });
   return {
     pressBanca: bar ? e('Press de banca', 'Pecho', 3, '6-8', '2', 150, 'Escápulas juntas y pies firmes.', ['Press con mancuernas']) : e('Press con mancuernas', 'Pecho', 3, '8-10', '2', 120, '', ['Flexiones lastradas']),
     pressInclinado: e('Press inclinado con mancuernas', 'Pecho', 3, '8-12', '2', 120, 'Banco a 30°.', ['Press inclinado en máquina']),
@@ -113,9 +123,10 @@ export function buildPlan(p) {
     ],
     mesocycles,
     progression_rules: [
-      'Doble progresión: cuando completes todas las series en el tope del rango de repeticiones, sube 2,5 kg (o 1-2 kg en mancuernas).',
+      'Doble progresión: cuando completes todas las series en el tope del rango de repeticiones, sube el peso (2,5 kg en la mayoría; 5 kg en ejercicios de pierna; 1 kg en mancuernas pequeñas). La app te propone la carga de cada sesión.',
       'Si en una sesión te quedas lejos del rango, repite el peso la semana siguiente.',
-      'En las semanas de descarga, la mitad de series y sin acercarte al fallo.',
+      'En la semana 1, calibra: elige pesos con los que llegues al rango dejando 2-3 repeticiones en reserva.',
+      'En las semanas de descarga, la app baja el peso a un 90 % y la mitad de series.',
     ],
     notes: [
       'Duerme 7-9 horas y toma suficiente proteína para recuperarte.',
@@ -124,8 +135,9 @@ export function buildPlan(p) {
   };
 }
 
-export async function demoAI(mode, input) {
-  await wait(mode === 'questions' ? 900 : 1800);
+export async function demoAI(mode, input, onProgress) {
+  if (mode === 'questions') await fakeProgress(onProgress, ['Pensando qué preguntarte…', 'Redactando las preguntas…'], 1200);
+  else await fakeProgress(onProgress, ['Analizando tu perfil y la evidencia…', 'Redactando el resumen y los principios…', 'Diseñando el mesociclo 1…', 'Diseñando el mesociclo 2…', 'Añadiendo reglas de progresión y notas…'], 4000);
   const p = input.profile || {};
   if (mode === 'questions') {
     return {

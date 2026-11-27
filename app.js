@@ -5,7 +5,8 @@
  * ============================================================ */
 
 import * as cloud from './cloud.js';
-import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, planTick, planTrainBanner, todayName, WEEKDAYS } from './plan.js';
+import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, planTick, planTrainBanner, planBusy, planResume, weekInfo, todayName, WEEKDAYS } from './plan.js';
+import { suggestLoad } from './progression.js';
 
 const STORAGE_KEY = 'gymonkey:v1';
 const REST_OPTIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 240, 300];
@@ -137,15 +138,37 @@ function lastSetsFor(exerciseId) {
   return [];
 }
 
-function newEntry(exerciseId, target) {
+/** Sesiones anteriores de un ejercicio (la más reciente primero), para calcular la carga de hoy. */
+function historyFor(exerciseId, max = 4) {
+  const out = [];
+  for (let i = state.workouts.length - 1; i >= 0 && out.length < max; i--) {
+    const entry = state.workouts[i].entries.find((e) => e.exerciseId === exerciseId);
+    const sets = entry?.sets.filter((s) => s.done) || [];
+    if (sets.length) out.push({ t: state.workouts[i].start, sets });
+  }
+  return out;
+}
+
+function newEntry(exerciseId, target, { deload = false } = {}) {
   const prev = lastSetsFor(exerciseId);
-  const count = target?.sets || prev.length || 3;
-  // Se rellenan los pesos de la última vez; las repeticiones del plan van como sugerencia.
+  const timed = isTimed(exerciseId);
+  let tg = target ? { ...target } : null;
+  if (tg && deload) { tg.sets = Math.max(1, Math.ceil(tg.sets / 2)); tg.deload = true; }
+  const count = tg?.sets || prev.length || 3;
+
+  // Carga de hoy por doble progresión (no aplica a ejercicios por tiempo).
+  const suggestion = timed ? null : suggestLoad({
+    name: exName(exerciseId), reps: tg?.reps, history: historyFor(exerciseId), startLoad: tg?.startLoad || 0, deload,
+  });
   const sets = Array.from({ length: count }, (_, i) => {
     const p = prev[i] || prev[prev.length - 1];
-    return { w: p?.w ?? '', r: target ? '' : (p?.r ?? ''), done: false };
+    const w = suggestion?.weight != null ? String(suggestion.weight) : (suggestion ? '' : (p?.w ?? ''));
+    return { w, r: tg ? '' : (p?.r ?? ''), done: false };
   });
-  return target ? { exerciseId, sets, target } : { exerciseId, sets };
+  const entry = { exerciseId, sets };
+  if (tg) entry.target = tg;
+  if (suggestion) entry.suggest = suggestion;
+  return entry;
 }
 
 function restOptions(selected) {
@@ -330,7 +353,7 @@ function updateMedia(info) {
 
 let wakeLock = null;
 async function syncWakeLock() {
-  const want = state.settings.wakeLock && !!state.active && !document.hidden && 'wakeLock' in navigator;
+  const want = state.settings.wakeLock && (!!state.active || planBusy()) && !document.hidden && 'wakeLock' in navigator;
   try {
     if (want && !wakeLock) {
       wakeLock = await navigator.wakeLock.request('screen');
@@ -426,7 +449,12 @@ function render() {
   document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   const views = { train: viewTrain, plan: viewPlan, routines: viewRoutines, history: viewHistory, progress: viewProgress };
   renderAccount();
-  $view.innerHTML = views[tab]();
+  try {
+    $view.innerHTML = views[tab]();
+  } catch (e) {
+    console.error('Error al pintar la pantalla', e);
+    $view.innerHTML = '<div class="card error"><p>No se pudo mostrar esta pantalla.</p><button class="primary" data-action="reload">Recargar la app</button></div>';
+  }
   bannerKind = null;
   document.getElementById('banner')?.remove();
   tick();
@@ -485,7 +513,8 @@ function viewTrain() {
             <button class="ghost danger" data-action="remove-entry" data-e="${ei}" aria-label="Quitar ejercicio">✕</button>
           </div>
         </div>
-        ${tg ? `<div class="target">🎯 ${tg.sets}×${esc(tg.reps)}${timed ? ' s' : ''} · RIR ${esc(tg.rir)}${tg.notes ? `<small>${esc(tg.notes)}</small>` : ''}</div>` : ''}
+        ${tg ? `<div class="target">🎯 ${tg.sets}×${esc(tg.reps)}${timed ? ' s' : ''} · RIR ${esc(tg.rir)}${tg.deload ? ' · descarga' : ''}${tg.notes ? `<small>${esc(tg.notes)}</small>` : ''}</div>` : ''}
+        ${e.suggest ? `<div class="suggest ${e.suggest.kind}"><b>💡 ${e.suggest.weight != null ? `Hoy: ${fmtKg(e.suggest.weight)} kg` : e.suggest.kind === 'calibrate' ? 'Calibra el peso' : 'Hoy: sube repeticiones'}</b>${e.suggest.lastText ? `<small>Última vez: ${esc(e.suggest.lastText)}</small>` : ''}<small>${esc(e.suggest.note)}</small></div>` : ''}
         <table class="sets">
           <thead><tr><th>#</th><th>Anterior</th><th>Kg</th><th>${timed ? 'Seg' : 'Reps'}</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
@@ -717,7 +746,7 @@ const actions = {
     state.active = {
       name: r ? r.name : 'Entreno libre',
       start: Date.now(),
-      entries: r ? r.exerciseIds.filter(exById).map((exId) => newEntry(exId, r.targets?.[exId])) : [],
+      entries: r ? r.exerciseIds.filter(exById).map((exId) => newEntry(exId, r.targets?.[exId], { deload: !!(r.fromPlan && weekInfo(state.plan)?.wp?.deload) })) : [],
       timer: null,
     };
   },
@@ -804,7 +833,7 @@ const actions = {
   finish() {
     const a = state.active;
     const entries = a.entries
-      .map((e) => ({ ...e, sets: e.sets.filter((s) => s.done) }))
+      .map(({ suggest, ...e }) => ({ ...e, sets: e.sets.filter((s) => s.done) }))
       .filter((e) => e.sets.length);
     const end = () => { state.active = null; clearNotes(); commit(); };
     if (!entries.length) {
@@ -986,6 +1015,7 @@ document.addEventListener('visibilitychange', () => {
   } else {
     clearNotes();
     tick();
+    planResume();
     if (cloud.currentUser() && Date.now() - lastPull > 60_000) syncPull();
   }
 });
@@ -1082,6 +1112,7 @@ function renderAccount() {
 }
 
 Object.assign(actions, planActions, {
+  reload() { location.reload(); return false; },
   'sign-in'() {
     cloud.signIn().catch((e) => toast(`No se pudo iniciar sesión: ${e.message}`));
     return false;

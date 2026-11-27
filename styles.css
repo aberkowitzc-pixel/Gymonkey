@@ -278,3 +278,15 @@ details.card summary { cursor: pointer; }
 
 .demo-note { border-color: #f59e0b; font-size: 0.9rem; }
 p.ask { font-size: 1.05rem; line-height: 1.45; margin: 4px 0 8px; }
+
+/* ---------- v4: progreso de la IA y cargas sugeridas ---------- */
+.progress { height: 12px; border-radius: 6px; background: var(--accent-soft); overflow: hidden; margin: 14px 0 8px; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 6px; transition: width 0.6s ease; }
+.ai-loading { text-align: left; }
+.ai-loading .phase { font-size: 0.9rem; color: var(--muted); }
+.suggest { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--accent-soft); font-size: 0.9rem; }
+.suggest small { display: block; color: var(--muted); font-size: 0.8rem; margin-top: 2px; line-height: 1.35; }
+.suggest.down, .suggest.break { background: color-mix(in srgb, #f59e0b 18%, var(--card)); }
+.suggest.deload { background: color-mix(in srgb, #3b82f6 16%, var(--card)); }
+#ai-pct { white-space: nowrap; flex: none; }
+.ai-loading .row { align-items: flex-start; gap: 12px; }

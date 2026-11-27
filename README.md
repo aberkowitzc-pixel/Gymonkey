@@ -7,6 +7,8 @@ App web (PWA) para registrar tus entrenamientos en el gimnasio, con un **entrena
 ## Qué puedes hacer
 
 - **Plan con IA** (pestaña 🧠): cuestionario inicial (objetivo, días, tiempo, experiencia, material, lesiones) → preguntas de seguimiento de la IA → plan por **mesociclos** basado en evidencia científica (volumen, frecuencia, RIR, descansos, descargas), con las fuentes citadas. Se convierte en tus rutinas con un toque, se puede **editar a mano** y **ajustar con IA** (menos/más días, cambiar días, sesiones más cortas, molestias…), con opción de deshacer.
+- **Cargas y sobrecarga progresiva**: la app propone el peso de cada ejercicio por **doble progresión** a partir de lo que registras (si completas todas las series en el tope del rango de repeticiones, sube; si no, mantén y suma repeticiones; si te quedas lejos, baja un 5 %). En la semana de descarga baja el peso a ≈ 90 % y las series a la mitad. La primera vez te pide calibrar, o parte de las marcas de referencia que des en el cuestionario.
+- **Generación robusta**: barra de progreso real mientras la IA escribe el plan, botón Cancelar, y Reintentar sin perder tus respuestas si se corta la conexión.
 - **Cuenta de Google**: inicia sesión para guardar todos tus datos en la nube y sincronizarlos entre dispositivos.
 - **Entrenar**: empieza un entreno desde una rutina o vacío, apunta peso y repeticiones de cada serie y márcala como hecha (✓). Ves lo que hiciste la última vez en cada serie.
 - **Cronómetro de serie** (▶): mide cuánto dura cualquier serie. En los ejercicios por tiempo (p. ej. plancha) avisa al llegar al objetivo y guarda los segundos.

@@ -45,7 +45,7 @@ export function initPlan(c) { ctx = c; }
 const S = () => ctx.state();
 const esc = (s) => ctx.esc(s);
 
-const ui = { step: null, loading: null, error: null, questions: null, editing: null, editMeso: 0, viewMeso: null };
+const ui = { step: null, loading: null, error: null, questions: null, editing: null, editMeso: 0, viewMeso: null, draft: {}, lastRun: null };
 export const planBusy = () => !!ui.loading;
 
 /* ---------- semana actual del plan ---------- */
@@ -70,39 +70,101 @@ export function weekInfo(plan) {
 
 /* ---------- llamadas a la IA ---------- */
 
-async function callAI(mode, input) {
-  if (DEMO_AI) return (await import('./demo.js')).demoAI(mode, input);
+const IDLE_MS = 45_000; // sin ninguna señal del servidor durante este tiempo = conexión perdida
+
+async function callAI(mode, input, { signal, onProgress } = {}) {
+  if (DEMO_AI) return (await import('./demo.js')).demoAI(mode, input, onProgress);
   const auth = ctx.auth;
   if (auth.configured && !auth.user()) throw new Error('Inicia sesión con Google para usar la IA.');
   const token = await auth.idToken();
-  let res;
+
+  // Si el servidor se queda en silencio, se corta y se avisa (en vez de esperar sin fin).
+  const link = new AbortController();
+  let idle = null, stalled = false;
+  const poke = () => { clearTimeout(idle); idle = setTimeout(() => { stalled = true; link.abort(); }, IDLE_MS); };
+  signal?.addEventListener('abort', () => link.abort());
+
   try {
-    res = await fetch('api/plan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ mode, input }),
-    });
-  } catch {
-    throw new Error('No hay conexión con el servidor. Revisa tu internet e inténtalo de nuevo.');
+    let res;
+    try {
+      res = await fetch('api/plan', {
+        method: 'POST',
+        signal: link.signal,
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ mode, input }),
+      });
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      throw new Error(stalled ? LOST : 'No hay conexión con el servidor. Revisa tu internet y pulsa Reintentar.');
+    }
+    poke(); // las cabeceras llegan enseguida si el servidor envía en directo; desde aquí vigilamos el silencio
+    if (!res.ok) {
+      let data = {};
+      try { data = await res.json(); } catch { /* respuesta sin JSON */ }
+      throw new Error(data.error || (res.status === 404 || res.status === 405
+        ? 'El servidor de IA no está disponible. La IA funciona cuando la app está publicada en Vercel.'
+        : `Error del servidor (${res.status}).`));
+    }
+
+    let result = null, failure = null;
+    const handle = (frame) => {
+      const payload = frame.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('');
+      if (!payload) return;
+      let ev;
+      try { ev = JSON.parse(payload); } catch { return; }
+      if (ev.type === 'progress') onProgress?.(ev);
+      else if (ev.type === 'result') result = ev.data;
+      else if (ev.type === 'error') failure = ev.error;
+    };
+    try {
+      if (res.body?.getReader) {
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          poke();
+          buf += dec.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf('\n\n')) >= 0) { handle(buf.slice(0, nl)); buf = buf.slice(nl + 2); }
+        }
+        handle(buf);
+      } else {
+        (await res.text()).split('\n\n').forEach(handle);
+      }
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      if (!result && !failure) throw new Error(LOST);
+    }
+    if (failure) throw new Error(failure);
+    if (!result) throw new Error(LOST);
+    return result;
+  } finally {
+    clearTimeout(idle);
   }
-  let data = {};
-  try { data = await res.json(); } catch { /* respuesta sin JSON */ }
-  if (!res.ok) {
-    throw new Error(data.error || (res.status === 404 || res.status === 405
-      ? 'El servidor de IA no está disponible. La IA funciona cuando la app está publicada en Vercel.'
-      : `Error del servidor (${res.status}).`));
-  }
-  return data;
 }
 
+const LOST = 'Se cortó la conexión antes de terminar (pasa a veces con datos móviles). Pulsa Reintentar: tus respuestas siguen guardadas.';
+
+/** Ejecuta una llamada larga a la IA mostrando el avance. Se puede cancelar y reintentar. */
 async function runAI(text, fn) {
-  ui.loading = { text, since: Date.now() };
+  const abort = new AbortController();
+  ui.lastRun = { text, fn };
+  ui.loading = { text, since: Date.now(), pct: 0, shown: 0, phase: 'Conectando con el entrenador…', abort };
   ui.error = null;
   ctx.render();
+  const onProgress = (p) => {
+    if (!ui.loading) return;
+    ui.loading.pct = Math.max(ui.loading.pct, p.pct);
+    ui.loading.phase = p.phase;
+    planTick();
+  };
   try {
-    await fn();
+    await fn({ signal: abort.signal, onProgress });
+    ui.lastRun = null;
   } catch (e) {
-    ui.error = e.message || 'Algo salió mal.';
+    if (!abort.signal.aborted) ui.error = e.message || 'Algo salió mal.';
   } finally {
     ui.loading = null;
     ctx.commit();
@@ -173,7 +235,7 @@ function applyMeso(mi) {
     d.exercises.filter((x) => x.name?.trim()).forEach((x) => {
       const ex = findOrCreateExercise(x);
       exerciseIds.push(ex.id);
-      targets[ex.id] = { sets: x.sets, reps: x.reps, rir: x.rir, rest: x.rest_seconds, notes: x.notes };
+      targets[ex.id] = { sets: x.sets, reps: x.reps, rir: x.rir, rest: x.rest_seconds, notes: x.notes, startLoad: x.start_load_kg || 0 };
     });
     st.routines.push({ id: ctx.uid(), name: d.name, exerciseIds, targets, fromPlan: true, weekday: d.weekday, planDay: { meso: mi, day: di } });
   });
@@ -188,13 +250,15 @@ const options = (list, sel) => list.map(([v, t]) => `<option value="${esc(v)}" $
 
 export function viewPlan() {
   if (ui.loading) {
-    return `<div class="card ai-loading">
-      <div class="spinner" aria-hidden="true"></div>
+    return `<div class="card ai-loading" role="status">
       <h3>${esc(ui.loading.text)}</h3>
-      <p class="muted">Llevas <b id="ai-elapsed">0:00</b>. Suele tardar entre 30 segundos y 2 minutos; puedes seguir usando la app mientras tanto.</p>
+      <div class="progress" aria-hidden="true"><i id="ai-bar" style="width:${Math.round(ui.loading.shown)}%"></i></div>
+      <div class="row between"><span id="ai-phase" class="phase">${esc(ui.loading.phase)}</span><b id="ai-pct" class="timer">${Math.round(ui.loading.shown)} %</b></div>
+      <p class="muted" style="margin:10px 0 0">Llevas <b id="ai-elapsed" class="timer">0:00</b>. Suele tardar entre 1 y 3 minutos: la IA escribe el plan completo. <b>Mantén esta pantalla abierta</b> hasta que termine.</p>
+      <button class="ghost block" style="margin-top:8px" data-action="plan-cancel-ai">Cancelar</button>
     </div>`;
   }
-  const err = ui.error ? `<div class="card error" role="alert">⚠️ ${esc(ui.error)}</div>` : '';
+  const err = ui.error ? `<div class="card error" role="alert"><p style="margin:0 0 8px">⚠️ ${esc(ui.error)}</p>${ui.lastRun ? '<button class="primary" data-action="plan-retry">Reintentar</button>' : ''}</div>` : '';
   const login = ctx.auth.configured && !ctx.auth.user()
     ? `<div class="card"><p>Para crear y ajustar planes con IA y guardar tus datos en la nube, inicia sesión.</p><button class="primary block" data-action="sign-in">Iniciar sesión con Google</button></div>`
     : '';
@@ -209,8 +273,23 @@ export function viewPlan() {
 }
 
 export function planTick() {
-  const el = document.getElementById('ai-elapsed');
-  if (el && ui.loading) el.textContent = ctx.fmtSecs(Math.floor((Date.now() - ui.loading.since) / 1000));
+  const l = ui.loading;
+  if (!l) return;
+  const secs = Math.floor((Date.now() - l.since) / 1000);
+  // Mientras la IA piensa y aún no ha escrito nada, la barra avanza despacio para que se note que sigue viva.
+  const target = l.pct > 4 ? l.pct : Math.min(4, secs / 20);
+  l.shown += (target - l.shown) * 0.35;
+  if (Math.abs(target - l.shown) < 0.2) l.shown = target;
+  const set = (id, fn) => { const n = document.getElementById(id); if (n) fn(n); };
+  set('ai-elapsed', (n) => { n.textContent = ctx.fmtSecs(secs); });
+  set('ai-bar', (n) => { n.style.width = `${l.shown.toFixed(1)}%`; });
+  set('ai-pct', (n) => { n.textContent = `${Math.round(l.shown)} %`; });
+  set('ai-phase', (n) => { if (n.textContent !== l.phase) n.textContent = l.phase; });
+}
+
+/** Al volver a la app: si la pantalla se quedó en "cargando" pero ya hay resultado, se repinta. */
+export function planResume() {
+  if (!ui.loading && document.querySelector('.ai-loading')) ctx.render();
 }
 
 function introView() {
@@ -247,6 +326,7 @@ function formView() {
         <label class="field">Edad (opcional)<input name="age" inputmode="numeric" value="${esc(p.age || '')}"></label>
         <label class="field">Sexo (opcional)<select name="sex">${options([['', 'Prefiero no decirlo'], ['Mujer', 'Mujer'], ['Hombre', 'Hombre']], p.sex || '')}</select></label>
       </div>
+      <label class="field">Tus marcas actuales (opcional)<textarea name="reference_lifts" rows="2" placeholder="Ej.: Press banca 60 kg × 8, Sentadilla 80 kg × 6. Con esto la app te propone pesos de partida.">${esc(p.reference_lifts || '')}</textarea></label>
       <label class="field">Lesiones, molestias o limitaciones<textarea name="injuries" rows="2" placeholder="Ej.: dolor lumbar ocasional, hombro derecho delicado…">${esc(p.injuries || '')}</textarea></label>
       <label class="field">Músculos o aspectos a priorizar<textarea name="priorities" rows="2" placeholder="Ej.: glúteos y espalda, mejorar la sentadilla…">${esc(p.priorities || '')}</textarea></label>
       <label class="field">Preferencias<textarea name="preferences" rows="2" placeholder="Ejercicios que te gustan o quieres evitar, cardio, deportes que practicas…">${esc(p.preferences || '')}</textarea></label>
@@ -264,8 +344,8 @@ function questionsView() {
         <div class="card">
           <b>${esc(x.question)}</b>
           <p class="muted" style="margin:4px 0 8px">${esc(x.why)}</p>
-          ${chips(`q_${i}`, x.options, [], 'radio')}
-          <input name="q_${i}_other" placeholder="Otra respuesta (opcional)" style="margin-top:8px">
+          ${chips(`q_${i}`, x.options, [ui.draft[`q_${i}`]].filter(Boolean), 'radio')}
+          <input name="q_${i}_other" placeholder="Otra respuesta (opcional)" value="${esc(ui.draft[`q_${i}_other`] || '')}" style="margin-top:8px">
         </div>`).join('')}
       <button class="primary block">Generar mi plan</button>
       <button type="button" class="ghost block" data-action="plan-back-form">Volver al cuestionario</button>
@@ -418,15 +498,16 @@ export function onPlanSubmit(form) {
       days: WEEKDAYS.filter((d) => fd.getAll('days').includes(d)),
       minutes: +fd.get('minutes'), weeks: +fd.get('weeks'),
       equipment: fd.getAll('equipment'),
-      age: fd.get('age').trim(), sex: fd.get('sex'),
+      age: fd.get('age').trim(), sex: fd.get('sex'), reference_lifts: fd.get('reference_lifts').trim(),
       injuries: fd.get('injuries').trim(), priorities: fd.get('priorities').trim(), preferences: fd.get('preferences').trim(),
     };
     st.profile = profile;
     ctx.save();
     if (!profile.days.length) { ui.error = 'Elige al menos un día de entreno.'; ctx.render(); return; }
     if (!profile.equipment.length) { ui.error = 'Marca el material que tienes disponible.'; ctx.render(); return; }
-    runAI('Pensando qué preguntarte…', async () => {
-      ui.questions = await callAI('questions', { profile: aiProfile() });
+    ui.draft = {};
+    runAI('Pensando qué preguntarte…', async (o) => {
+      ui.questions = await callAI('questions', { profile: aiProfile() }, o);
       ui.step = 'questions';
     });
   } else if (form.dataset.form === 'plan-questions') {
@@ -434,8 +515,9 @@ export function onPlanSubmit(form) {
       question: q.question,
       answer: (fd.get(`q_${i}_other`) || '').trim() || fd.get(`q_${i}`) || 'Sin respuesta',
     }));
-    runAI('Diseñando tu plan por mesociclos…', async () => {
-      const r = await callAI('generate', { profile: aiProfile(), answers, library: library(), today: todayISO() });
+    ui.draft = Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === 'string'));
+    runAI('Diseñando tu plan por mesociclos…', async (o) => {
+      const r = await callAI('generate', { profile: aiProfile(), answers, library: library(), today: todayISO() }, o);
       setPlan(r.plan, r.message, [], false);
       ui.step = null;
       ctx.toast('¡Tu plan está listo!');
@@ -461,6 +543,17 @@ export function onPlanInput(el) {
 /* ---------- acciones ---------- */
 
 export const planActions = {
+  'plan-retry'() {
+    const run = ui.lastRun;
+    if (!run) return false;
+    runAI(run.text, run.fn);
+    return false;
+  },
+  'plan-cancel-ai'() {
+    ui.loading?.abort.abort();
+    ui.lastRun = null;
+    return false;
+  },
   'plan-start'() { ui.step = 'form'; ui.error = null; },
   'plan-cancel'() { ui.step = null; ui.error = null; },
   'plan-back-form'() { ui.step = 'form'; ui.error = null; },
@@ -524,12 +617,12 @@ export const planActions = {
         if (daysChanged) st.profile.days = days;
         if (minutesChanged) st.profile.minutes = minutes;
       }
-      runAI('Adaptando tu plan…', async () => {
+      runAI('Adaptando tu plan…', async (o) => {
         const r = await callAI('adapt', {
           profile: aiProfile(), plan: planForAI(plan), currentWeek: weekInfo(plan).week,
           history: trainingSummary(), library: library(), today: todayISO(),
           feedback: { options: opts, days: daysChanged ? days : [], minutes: minutesChanged ? minutes : null, text },
-        });
+        }, o);
         setPlan(r.plan, r.message, r.changes, true);
       });
     });
@@ -540,7 +633,7 @@ export const planActions = {
   'plan-edit-cancel'() { ui.editing = null; },
   'plan-edit-add-ex'(_, el) {
     ui.editing.mesocycles[+el.dataset.m].days[+el.dataset.d].exercises.push({
-      name: '', muscle_group: 'Otros', type: 'reps', sets: 3, reps: '8-12', rir: '2', rest_seconds: 90, notes: '', alternatives: [],
+      name: '', muscle_group: 'Otros', type: 'reps', sets: 3, reps: '8-12', rir: '2', rest_seconds: 90, start_load_kg: 0, notes: '', alternatives: [],
     });
   },
   'plan-edit-del-ex'(_, el) { ui.editing.mesocycles[+el.dataset.m].days[+el.dataset.d].exercises.splice(+el.dataset.x, 1); },
