@@ -72,3 +72,21 @@ En iPhone: Safari → Compartir → *Añadir a pantalla de inicio*.
 - **Modelos de IA**: para gastar menos, el *plan nuevo* usa *Claude Sonnet 5.5* y todo lo demás (chat, preguntas, ajustes, dictado, cargas, revisión semanal) usa *Claude Haiku 5.5*. Se cambian con variables en Vercel y un nuevo despliegue: `CLAUDE_MODEL_PLAN` (plan nuevo), `CLAUDE_MODEL_FAST` (el resto) o `CLAUDE_MODEL` (fuerza el mismo modelo en todo, por ejemplo `claude-opus-5-5` si quieres máxima calidad). El consumo de cada llamada queda en los logs de Vercel con la etiqueta `ai-usage`.
 - **Uso comercial**: el plan gratuito de Vercel es para proyectos personales. Si vas a cobrar por la app, necesitas Vercel Pro.
 - **Regenerar el paquete de Firebase** (solo para desarrolladores): `npm install && npm run build:firebase`.
+
+### Acceso abierto con cuota por persona
+
+Para que cualquiera pueda registrarse con Google y usar la IA sin que lo apruebes, deja **vacías** `ALLOWED_EMAILS` y `ALLOWED_EMAILS_EXTRA`
+y conecta un Upstash Redis (Vercel → tu proyecto → **Storage** → **Create** → Upstash for Redis → conéctalo al proyecto; añade solo las variables
+`KV_REST_API_URL` y `KV_REST_API_TOKEN`). El servidor cuenta las peticiones de cada persona por día (UTC) y por tipo, y pasado el límite responde con un aviso:
+
+| Tipo | Por día y persona | Variable para cambiarlo |
+|---|---|---|
+| Preguntas previas al plan | 4 | `QUOTA_QUESTIONS` |
+| Planes nuevos | 2 | `QUOTA_GENERATE` |
+| Ajustes del plan | 8 | `QUOTA_ADAPT` |
+| Mensajes al coach | 60 | `QUOTA_CHAT` |
+| Dictado e importación | 20 | `QUOTA_SESSIONS` |
+| Revisión de la semana | 6 | `QUOTA_REVIEW` |
+| Estimación de cargas | 6 | `QUOTA_LOADS` |
+
+Si la IA falla, esa petición no cuenta. Si el acceso está abierto y no hay contadores configurados, el servidor **se niega a usar la IA** (para no abrir el gasto sin freno por error).
