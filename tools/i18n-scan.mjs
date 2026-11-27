@@ -60,7 +60,7 @@ export function scanSource(src, file = '') {
     if (SKIP_VALUES.has(text) || text.startsWith('Write the content of the document in Hebrew')) return;   // este último es parte del prompt para otra IA
     if (!template && IDENT.test(text)) return;
     // Selectores, expresiones regulares en cadenas, rutas, colores…
-    if (/^(Bearer|q_|gymonkey-|Gymonkey$|Notification$|2-digit$|banner$|icon-|&[a-z]+;)|^[a-z]+\[[a-z-]+/.test(text)) return;
+    if (/^(Bearer|q_|gymonkey-|Enter$|Gymonkey$|Notification$|2-digit$|banner$|icon-|&[a-z]+;)|^[a-z]+\[[a-z-]+/.test(text)) return;
     if (parent?.type === 'CallExpression' && parent.callee.type === 'MemberExpression' && parent.callee.object.name === 'console') return;
     if (/^[.#\[]|^\/|^https?:|^#[0-9a-f]{3,8}$|^[\w-]+\.(js|png|svg|json|css|md)$/i.test(text)) return;
     // Plantillas que solo contienen marcado y expresiones (sin texto propio).

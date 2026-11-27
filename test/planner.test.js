@@ -289,3 +289,14 @@ test('progreso de la estimación de cargas', () => {
   assert.match(loadsProgress('"start_load_kg": 40, "start_load_kg": 20').phase, /Estimando cargas \(2\)/);
   assert.ok(loadsProgress('x'.repeat(1250)).pct > 40);
 });
+
+test('chat: responde y decide si hay que cambiar el plan; sin mensaje de la persona se rechaza', async () => {
+  const parsed = { message: 'Vale, lo ajusto.', action: 'update_plan', instruction: 'Sesiones de 45 minutos.' };
+  let seen;
+  const client = { beta: { messages: { stream: (params) => { seen = params; return { on() { return this; }, async finalMessage() { return { stop_reason: 'end_turn', parsed_output: parsed, model: 'fake', usage: {} }; } }; } } } };
+  const out = await runPlanner(client, 'chat', { plan: { title: 'X', mesocycles: [] }, chat: [{ role: 'coach', text: 'Hola' }, { role: 'user', text: 'Tengo poco tiempo' }] }, { lang: 'en' });
+  assert.equal(out.action, 'update_plan');
+  assert.match(seen.messages[0].content, /Tengo poco tiempo/);
+  assert.match(seen.system, /English/);
+  await assert.rejects(runPlanner(client, 'chat', { chat: [{ role: 'coach', text: 'Hola' }] }), PlannerError);
+});

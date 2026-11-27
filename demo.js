@@ -148,6 +148,14 @@ export function buildPlan(p) {
 }
 
 export async function demoAI(mode, input, onProgress) {
+  if (mode === 'chat') {
+    await fakeProgress(onProgress, ['Pensando…', 'Escribiendo…'], 900);
+    const last = [...(input.chat || [])].reverse().find((m) => m.role !== 'coach')?.text || '';
+    if (/cambi|quit|añad|más|menos|corta|larga|dolor|lesi|molest|traduc|días|sustitu|sin /i.test(last)) {
+      return { message: 'Entendido, voy a ajustar tu plan (modo demo: solo se simulan cambios de duración).', action: 'update_plan', instruction: last };
+    }
+    return { message: 'Modo demo: aquí el coach real respondería a tu pregunta con tu plan y tu historial delante. Prueba a pedirle un cambio, por ejemplo "sesiones más cortas".', action: 'none', instruction: '' };
+  }
   if (mode === 'loads') {
     await fakeProgress(onProgress, ['Calculando tus cargas…', 'Estimando cargas…'], 1400);
     return {
@@ -212,7 +220,9 @@ export async function demoAI(mode, input, onProgress) {
   const fb = input.feedback || {};
   const cur = input.plan;
   const profile = { ...p, days: fb.days?.length ? fb.days : cur.schedule, minutes: fb.minutes || cur.session_minutes };
-  const opts = fb.options || [];
+  const opts = [...(fb.options || [])];
+  if (/corta|short/i.test(fb.text || '')) opts.push('Sesiones más cortas');
+  if (/larga|long/i.test(fb.text || '')) opts.push('Sesiones más largas');
   if (opts.includes('Sesiones más cortas') && !fb.minutes) profile.minutes = Math.max(30, cur.session_minutes - 15);
   if (opts.includes('Sesiones más largas') && !fb.minutes) profile.minutes = cur.session_minutes + 15;
   const plan = buildPlan({ ...profile, weeks: cur.total_weeks });

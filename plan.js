@@ -5,7 +5,7 @@ import { DEMO_AI } from './config.js';
 import { MAX_DOC, promptOtraIA, buildExport } from './context.js';
 import { matchExercise, addAlias } from './exercises.js';
 import { knownLoads } from './progression.js';
-import { t, tn, T, getLang, fmtNum, exLabel, dayShort, canonicalExercise } from './i18n.js';
+import { t, tn, T, LANGS, getLang, fmtNum, exLabel, dayShort, canonicalExercise } from './i18n.js';
 
 export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const GOALS = [
@@ -49,7 +49,7 @@ export function initPlan(c) { ctx = c; }
 const S = () => ctx.state();
 const esc = (s) => ctx.esc(s);
 
-const ui = { step: null, loading: null, error: null, questions: null, editing: null, editMeso: 0, viewMeso: null, draft: {}, lastRun: null };
+const ui = { showPlan: false, chatDraft: '', noTranslate: false, step: null, loading: null, error: null, questions: null, editing: null, editMeso: 0, viewMeso: null, draft: {}, lastRun: null };
 export const planBusy = () => !!ui.loading;
 
 /* ---------- semana actual del plan ---------- */
@@ -155,10 +155,10 @@ export async function callAI(mode, input, { signal, onProgress } = {}) {
 const lost = () => t('Se cortó la conexión antes de terminar (pasa a veces con datos móviles). Pulsa Reintentar: tus respuestas siguen guardadas.');
 
 /** Ejecuta una llamada larga a la IA mostrando el avance. Se puede cancelar y reintentar. */
-async function runAI(text, fn) {
+async function runAI(text, fn, { chat = false } = {}) {
   const abort = new AbortController();
-  ui.lastRun = { text, fn };
-  ui.loading = { text, since: Date.now(), pct: 0, shown: 0, phase: t('Conectando con el entrenador…'), abort };
+  ui.lastRun = { text, fn, chat };
+  ui.loading = { text, chat, since: Date.now(), pct: 0, shown: 0, phase: t('Conectando con el entrenador…'), abort };
   ui.error = null;
   ctx.render();
   const onProgress = (p) => {
@@ -196,7 +196,7 @@ export function trainingSummary() {
 }
 
 /** Guarda un plan nuevo o actualizado (conservando el progreso y la versión anterior para deshacer). */
-function setPlan(data, message, changes, keepProgress) {
+function setPlan(data, message, changes, keepProgress, lang = getLang()) {
   const st = S();
   const prev = st.plan;
   const keep = keepProgress && prev;
@@ -206,6 +206,7 @@ function setPlan(data, message, changes, keepProgress) {
     id: keep ? prev.id : ctx.uid(),
     createdAt: keep ? prev.createdAt : Date.now(),
     updatedAt: Date.now(),
+    lang,
     startDate: keep ? prev.startDate : null,
     appliedMeso: keep ? prev.appliedMeso : null,
     lastMessage: message || '',
@@ -264,16 +265,18 @@ const chips = (name, values, selected = [], type = 'checkbox', tr = true) => `<d
 const options = (list, sel, tr = true) => list.map(([v, txt]) => `<option value="${esc(v)}" ${String(v) === String(sel) ? 'selected' : ''}>${esc(tr ? t(txt) : txt)}</option>`).join('');
 const minuteOpts = () => MINUTES.map((m) => [m, t('{n} min', { n: m })]);
 
-export function viewPlan() {
-  if (ui.loading) {
-    return `<div class="card ai-loading" role="status">
+function loadingCard() {
+  return `<div class="card ai-loading" role="status">
       <h3>${esc(ui.loading.text)}</h3>
       <div class="progress" aria-hidden="true"><i id="ai-bar" style="width:${Math.round(ui.loading.shown)}%"></i></div>
       <div class="row between"><span id="ai-phase" class="phase">${esc(ui.loading.phase)}</span><b id="ai-pct" class="timer">${Math.round(ui.loading.shown)} %</b></div>
       <div class="row between small-line muted"><span>⏱ <b id="ai-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
       <button class="ghost block" style="margin-top:8px" data-action="plan-cancel-ai">${t('Cancelar')}</button>
     </div>`;
-  }
+}
+
+export function viewPlan() {
+  if (ui.loading && !ui.loading.chat) return loadingCard();
   const err = ui.error ? `<div class="card error" role="alert"><p style="margin:0 0 8px">⚠️ ${esc(ui.error)}</p>${ui.lastRun ? `<button class="primary" data-action="plan-retry">${t('Reintentar')}</button>` : ''}</div>` : '';
   const login = ctx.auth.configured && !ctx.auth.user()
     ? `<div class="card"><button class="primary block" data-action="sign-in">${t('Iniciar sesión con Google')}</button><p class="muted" style="margin:8px 0 0;text-align:center">${t('Para usar la IA y guardar tus datos')}</p></div>`
@@ -281,9 +284,10 @@ export function viewPlan() {
   const demo = DEMO_AI ? `<div class="card demo-note">🧪 <b>${t('Modo demo')}</b> · ${t('la IA está simulada')}</div>` : '';
   if (ui.step === 'form') return err + demo + login + formView();
   if (ui.step === 'questions') return err + demo + questionsView();
-  if (!S().plan && !ui.editing) return err + demo + login + introView();
+  if (!S().plan && !ui.editing) return err + demo + login + chatView();
   if (ui.editing) return err + editView();
-  return err + planView(S().plan);
+  if (ui.showPlan) return err + planView(S().plan);
+  return err + demo + chatView();
 }
 
 export function planTick() {
@@ -306,14 +310,87 @@ export function planResume() {
   if (!ui.loading && document.querySelector('.ai-loading')) ctx.render();
 }
 
-function introView() {
-  return `
-    <div class="card intro">
-      <div class="big">🧠</div>
-      <h2>${t('Tu plan con IA')}</h2>
-      <p class="muted">${t('Un cuestionario corto y recibes un plan por mesociclos.')}</p>
-      <button class="primary block" data-action="plan-start">${t('Crear mi plan')}</button>
-    </div>`;
+/* ---------- chat con el coach ---------- */
+
+function pushChat(role, text, changes) {
+  const st = S();
+  st.chat ||= [];
+  const msg = { id: ctx.uid(), role, text: String(text || ''), ts: Date.now() };
+  if (changes?.length) msg.changes = changes;
+  st.chat.push(msg);
+  if (st.chat.length > 80) st.chat = st.chat.slice(-80);
+}
+
+const nl2br = (s) => esc(s).replace(/\n/g, '<br>');
+
+function bubble(m, withUndo) {
+  const changes = m.changes?.length ? `<ul class="changes">${m.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : '';
+  const undo = withUndo ? `<button class="small" data-action="plan-undo">↩ ${t('Deshacer cambios')}</button>` : '';
+  return `<div class="bubble ${m.role === 'user' ? 'me' : 'coach'}">${m.text ? `<p>${nl2br(m.text)}</p>` : ''}${changes}${undo}</div>`;
+}
+
+function chatView() {
+  const plan = S().plan;
+  const msgs = S().chat || [];
+  const lastChange = [...msgs].reverse().find((m) => m.changes?.length)?.id;
+  const canUndo = !!plan?.history?.length;
+  const intro = !plan
+    ? `<div class="bubble coach"><p>${t('¡Hola! Soy tu coach. Te hago unas preguntas, diseño tu plan por mesociclos y después lo vamos ajustando por aquí, charlando.')}</p><button class="primary" data-action="plan-start">${t('Crear mi plan')}</button></div>`
+    : !msgs.length
+      ? `<div class="bubble coach"><p>${t('Cuéntame cómo vas y ajusto tu plan: días, ejercicios, molestias, tiempo… Pregúntame lo que quieras.')}</p></div>`
+      : '';
+  const translate = plan && !ui.noTranslate && (plan.lang || 'es') !== getLang()
+    ? `<div class="card accent stack"><span>${t('Tu plan está escrito en {lang}. ¿Quieres que el coach lo traduzca?', { lang: LANGS[plan.lang || 'es'] })}</span>
+        <div class="row"><button class="primary small" data-action="chat-translate">${t('Traducir mi plan')}</button><button class="ghost small" data-action="chat-no-translate">${t('Ahora no')}</button></div></div>`
+    : '';
+  const busy = !!ui.loading;
+  return `<div class="chat">
+    <div class="row between chat-head"><h2>🧠 ${t('Tu coach')}</h2>${plan ? `<button class="small" data-action="plan-chat-toggle">📋 ${t('Ver plan')}</button>` : ''}</div>
+    <div class="bubbles">
+      ${intro}
+      ${msgs.map((m) => bubble(m, m.id === lastChange && canUndo)).join('')}
+      ${translate}
+      ${ui.loading?.chat ? loadingCard() : ''}
+      <div id="chat-end"></div>
+    </div>
+    ${plan ? `<form data-form="plan-chat" class="chat-input">
+      <textarea name="text" rows="1" data-chatinput placeholder="${t('Escribe a tu coach…')}" aria-label="${t('Escribe a tu coach…')}" ${busy ? 'disabled' : ''}>${esc(ui.chatDraft)}</textarea>
+      <button class="primary" aria-label="${t('Enviar')}" ${busy ? 'disabled' : ''}>↑</button>
+    </form>` : ''}
+  </div>`;
+}
+
+export function onChatInput(el) {
+  ui.chatDraft = el.value;
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+}
+
+/** Un mensaje de la persona: el coach responde y, si hace falta, ajusta el plan. */
+function sendChat(text) {
+  pushChat('user', text);
+  ui.chatDraft = '';
+  let reply = null, updated = false;
+  const base = () => {
+    const plan = S().plan;
+    return { profile: aiProfile(), plan: planForAI(plan), currentWeek: weekInfo(plan)?.week || 1, history: trainingSummary(), today: todayISO(), library: library(), known_loads: knownLoads(S().workouts, S().exercises) };
+  };
+  runAI(t('Pensando…'), async (o) => {
+    if (!reply) {
+      const chat = (S().chat || []).slice(-14).map(({ role, text: tx }) => ({ role, text: tx }));
+      reply = await callAI('chat', { ...base(), chat }, o);
+      pushChat('coach', reply.message);
+      ctx.render();
+    }
+    if (reply.action === 'update_plan' && reply.instruction && !updated) {
+      ui.loading.text = t('Ajustando tu plan…');
+      Object.assign(ui.loading, { pct: 0, shown: 0, since: Date.now(), phase: t('Conectando con el entrenador…') });
+      const r = await callAI('adapt', { ...base(), feedback: { options: [], days: [], minutes: null, text: reply.instruction } }, o);
+      setPlan(r.plan, '', r.changes, true);
+      updated = true;
+      pushChat('coach', r.message, r.changes);
+    }
+  }, { chat: true });
 }
 
 /** Bloque "adjuntar mi plan o notas": archivo, texto pegado y prompt para otra IA. */
@@ -441,6 +518,7 @@ function planView(plan) {
     : '';
 
   return `
+    <div class="row between" style="margin-bottom:8px"><span></span><button class="small" data-action="plan-chat-toggle">💬 ${t('Chat')}</button></div>
     <div class="card">
       <h2 style="margin:0 0 8px">${esc(plan.title)}</h2>
       <div class="tags">
@@ -539,6 +617,11 @@ function editView() {
 export function onPlanSubmit(form) {
   const fd = new FormData(form);
   const st = S();
+  if (form.dataset.form === 'plan-chat') {
+    const text = (fd.get('text') || '').trim();
+    if (text && !ui.loading) sendChat(text);
+    return;
+  }
   if (form.dataset.form === 'plan-profile') {
     const profile = {
       goal: fd.get('goal'), experience: fd.get('experience'),
@@ -568,7 +651,9 @@ export function onPlanSubmit(form) {
     runAI(t('Diseñando tu plan por mesociclos…'), async (o) => {
       const r = await callAI('generate', { profile: aiProfile(), answers, library: library(), today: todayISO(), context_doc: profileDoc(), known_loads: knownLoads(S().workouts, S().exercises) }, o);
       setPlan(r.plan, r.message, [], false);
+      pushChat('coach', r.message, r.changes);
       ui.step = null;
+      ui.showPlan = false;
       ctx.toast(t('¡Tu plan está listo!'));
     });
   }
@@ -655,6 +740,9 @@ export function onContextInput(box) {
 }
 
 export const planActions = {
+  'plan-chat-toggle'() { ui.showPlan = !ui.showPlan; },
+  'chat-translate'() { sendChat(t('Traduce mi plan al {lang}', { lang: LANGS[getLang()] })); return false; },
+  'chat-no-translate'() { ui.noTranslate = true; },
   'ctx-copy-prompt'(_, el) { copyText(promptOtraIA(getLang()), el, t('Prompt copiado: pégalo en la otra IA')); return false; },
   'ctx-copy-export'(_, el) { copyText(exportMd(), el, t('Datos copiados en Markdown')); return false; },
   'ctx-download-export'() {
@@ -669,7 +757,7 @@ export const planActions = {
   'plan-retry'() {
     const run = ui.lastRun;
     if (!run) return false;
-    runAI(run.text, run.fn);
+    runAI(run.text, run.fn, { chat: run.chat });
     return false;
   },
   'plan-cancel-ai'() {
@@ -677,7 +765,7 @@ export const planActions = {
     ui.lastRun = null;
     return false;
   },
-  'plan-start'() { ui.step = 'form'; ui.error = null; },
+  'plan-start'() { ui.step = 'form'; ui.error = null; ui.showPlan = false; },
   'plan-cancel'() { ui.step = null; ui.error = null; },
   'plan-back-form'() { ui.step = 'form'; ui.error = null; },
   'plan-all-equipment'() {
@@ -698,6 +786,7 @@ export const planActions = {
     if (!prev) return false;
     ctx.ask(t('¿Volver a la versión anterior del plan?'), t('Deshacer'), () => {
       st.plan = { ...prev, startDate: st.plan.startDate, appliedMeso: st.plan.appliedMeso, history: rest, lastMessage: t('Has vuelto a la versión anterior del plan.'), lastChanges: [] };
+      pushChat('coach', t('Has vuelto a la versión anterior del plan.'));
       if (st.plan.appliedMeso != null) applyMeso(weekInfo(st.plan).meso);
       ctx.commit();
     });
@@ -749,6 +838,7 @@ export const planActions = {
           feedback: { options: opts, days: daysChanged ? days : [], minutes: minutesChanged ? minutes : null, text },
         }, o);
         setPlan(r.plan, r.message, r.changes, true);
+        pushChat('coach', r.message, r.changes);
       });
     });
     return false;
@@ -788,7 +878,7 @@ export const planActions = {
     p.days_per_week = cur.days.length;
     p.schedule = WEEKDAYS.filter((w) => cur.days.some((d) => d.weekday === w));
     ui.editing = null;
-    setPlan(p, t('Has editado el plan a mano.'), [t('Edición manual')], true);
+    setPlan(p, t('Has editado el plan a mano.'), [t('Edición manual')], true, S().plan.lang || 'es');
   },
 };
 

@@ -5,14 +5,14 @@
  * ============================================================ */
 
 import * as cloud from './cloud.js';
-import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, onContextFile, onContextInput, planTick, planTrainBanner, planBusy, planResume, planWeekLabel, weekInfo, todayName, WEEKDAYS } from './plan.js';
+import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, onContextFile, onContextInput, onChatInput, planTick, planTrainBanner, planBusy, planResume, planWeekLabel, weekInfo, todayName, WEEKDAYS } from './plan.js';
 import { suggestLoad, suggestedReps, inferRange, parseRange, knownLoads } from './progression.js';
 import { initLoads, viewLoads, loadsActive, loadsBusy, loadsTick, loadsLeave, loadsActions, onLoadsInput } from './loads.js';
 import { buildWeeks, shortName, isoLocal } from './calendar.js';
 import { buildWeekContext, hasDeficit, moveOptions, setMove, adjustmentsFor, pruneSchedule } from './weekplan.js';
 import { initWeek, viewWeek, weekActive, weekBusy, weekTick, weekLeave, weekActions, onWeekChange } from './week.js';
 import { matchExercise, mergeExercises, findDuplicates } from './exercises.js';
-import { t, tn, T, E, tData, getLang, setLang, LANGS, detectLang, fmtNum, fwd, dayShort, dayLetter, exLabel, canonicalExercise, fmtDateShort, fmtTime, isRTL } from './i18n.js';
+import { t, tn, T, E, tData, getLang, setLang, LANGS, detectLang, fmtNum, fwd, dayShort, dayLetter, exLabel, canonicalExercise, fmtDateShort, fmtTime, isRTL, locale } from './i18n.js';
 import { initSessions, viewSessions, sessionsActive, sessionsBusy, sessionsTick, sessionsLeave, sessionsActions, onSessionsInput, onSessionsChange, onSessionsFile } from './sessions.js';
 
 const STORAGE_KEY = 'gymonkey:v1';
@@ -58,6 +58,7 @@ function defaultState() {
     active: null,
     profile: null,
     plan: null,
+    chat: [],
     moves: [],
     adjust: [],
     meta: { deletedWorkouts: [] },
@@ -71,6 +72,7 @@ function migrate(s) {
   if (s.active && s.active.timer === undefined) s.active.timer = null;
   s.profile ??= null;
   s.plan ??= null;
+  s.chat ??= [];
   s.moves ??= [];
   s.adjust ??= [];
   s.meta = { deletedWorkouts: [], ...(s.meta || {}) };
@@ -547,6 +549,7 @@ function render() {
   }
   bannerKind = null;
   document.getElementById('banner')?.remove();
+  if (tab === 'plan') document.getElementById('chat-end')?.scrollIntoView({ block: 'end' });
   tick();
   syncWakeLock();
 }
@@ -579,8 +582,14 @@ function suggestHTML(sg, exerciseId) {
 }
 
 /** Hoy + esta semana y la próxima: qué toca, qué hiciste y qué falta. */
-const calWeeks = () => buildWeeks({ now: Date.now(), routines: state.routines, workouts: state.workouts, moves: state.moves });
-const calCell = (iso) => calWeeks().flatMap((w) => w.days).find((d) => d.iso === iso);
+const calWeeks = (weeks = 2) => buildWeeks({ now: Date.now(), routines: state.routines, workouts: state.workouts, moves: state.moves, weeks });
+/** Semanas que muestra el calendario: de esta hasta el final del mesociclo en curso (mínimo dos). */
+function calSpan() {
+  const wi = state.plan?.startDate ? weekInfo(state.plan) : null;
+  const meso = wi && state.plan.mesocycles[wi.meso];
+  return meso ? Math.max(2, Math.min(16, meso.weeks - wi.weekInMeso + 1)) : 2;
+}
+const calCell = (iso) => calWeeks(calSpan()).flatMap((w) => w.days).find((d) => d.iso === iso);
 const dayLabel = (d) => `${dayShort(d.weekday)} ${d.date.getDate()}`;
 
 /** Datos de la semana para que la IA decida si hay que compensar. */
@@ -658,7 +667,7 @@ function skipSession(cell) {
 }
 
 function viewCalendar() {
-  const weeks = calWeeks();
+  const weeks = calWeeks(calSpan());
   if (!weeks.some((w) => w.days.some((d) => d.routine))) return '';
   const today = weeks[0].days.find((d) => d.isToday);
   const n = (r) => r.exerciseIds.filter(exById).length;
@@ -681,7 +690,7 @@ function viewCalendar() {
   };
   const grid = weeks.map((w, i) => {
     const lab = planWeekLabel(w.days[0].date.getTime());
-    return `<div class="cal-head"><b>${i === 0 ? t('Esta semana') : t('Próxima')}</b><span class="muted">${lab ? esc(lab.text) : ''}</span>${lab?.deload ? `<span class="pill">${t('Descarga')}</span>` : ''}</div>
+    return `<div class="cal-head"><b>${i === 0 ? t('Esta semana') : i === 1 ? t('Próxima') : t('Semana del {date}', { date: w.days[0].date.toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) })}</b><span class="muted">${lab ? esc(lab.text) : ''}</span>${lab?.deload ? `<span class="pill">${t('Descarga')}</span>` : ''}</div>
       <div class="cal-grid">${w.days.map(cell).join('')}</div>`;
   }).join('');
   return `${hoy}${pendingCard(weeks)}<div class="cal">${grid}</div>`;
@@ -1531,6 +1540,12 @@ document.addEventListener('pointercancel', endDrag);
 // El audio del móvil solo se puede activar tras un toque del usuario.
 document.addEventListener('pointerdown', () => audioCtx(), { passive: true });
 
+// En el chat, Enter envía el mensaje (Mayús+Enter hace un salto de línea).
+document.addEventListener('keydown', (ev) => {
+  const el = ev.target;
+  if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing && el.dataset?.chatinput !== undefined) { ev.preventDefault(); el.form?.requestSubmit(); }
+});
+
 document.addEventListener('submit', (ev) => {
   const form = ev.target;
   if (!form.dataset.form) return;
@@ -1544,6 +1559,7 @@ document.addEventListener('input', (ev) => {
   if (el.dataset.edit) { onPlanInput(el); return; }
   if (el.dataset.ld !== undefined) { onLoadsInput(el); return; }
   if (el.dataset.ctxdoc !== undefined) { onContextInput(el); return; }
+  if (el.dataset.chatinput !== undefined) { onChatInput(el); return; }
   if (el.dataset.svtext !== undefined || el.dataset.sv !== undefined) { onSessionsInput(el); return; }
   if (!el.dataset.field || !state.active) return;
   const set = state.active.entries[+el.dataset.e].sets[+el.dataset.s];
