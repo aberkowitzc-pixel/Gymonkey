@@ -5,8 +5,10 @@
  * ============================================================ */
 
 import * as cloud from './cloud.js';
-import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, onContextFile, onContextInput, planTick, planTrainBanner, planBusy, planResume, weekInfo, todayName, WEEKDAYS } from './plan.js';
+import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, onContextFile, onContextInput, planTick, planTrainBanner, planBusy, planResume, planWeekLabel, weekInfo, todayName, WEEKDAYS } from './plan.js';
 import { suggestLoad, suggestedReps, inferRange, parseRange } from './progression.js';
+import { buildWeeks, shortName } from './calendar.js';
+import { matchExercise, mergeExercises, findDuplicates } from './exercises.js';
 import { initSessions, viewSessions, sessionsActive, sessionsBusy, sessionsTick, sessionsLeave, sessionsActions, onSessionsInput, onSessionsChange, onSessionsFile } from './sessions.js';
 
 const STORAGE_KEY = 'gymonkey:v1';
@@ -146,7 +148,8 @@ function historyFor(exerciseId, max = 4) {
   for (let i = state.workouts.length - 1; i >= 0 && out.length < max; i--) {
     const entry = state.workouts[i].entries.find((e) => e.exerciseId === exerciseId);
     const sets = entry?.sets.filter((s) => s.done) || [];
-    if (sets.length) out.push({ t: state.workouts[i].start, sets });
+    // Si quedaron menos series de las previstas, la sesión de ese ejercicio fue incompleta: no se sube el peso.
+    if (sets.length) out.push({ t: state.workouts[i].start, sets, incomplete: entry.planned != null && sets.length < entry.planned });
   }
   return out;
 }
@@ -535,16 +538,55 @@ function targetHTML(tg, timed) {
 }
 
 /** Carga sugerida en una línea; el motivo y lo de la última vez, solo al tocar. */
-function suggestHTML(sg) {
+function suggestHTML(sg, exerciseId) {
   if (!sg) return '';
+  // Sin historial: ¿existe el mismo ejercicio con otro nombre? Se ofrece unirlos.
+  let hint = '';
+  if (sg.kind === 'calibrate' || sg.kind === 'start') {
+    const me = exById(exerciseId);
+    const cand = me && matchExercise(me.name, state.exercises.filter((x) => x.id !== exerciseId && historyFor(x.id, 1).length))?.exercise;
+    if (cand) hint = `<div class="link-hint">¿Es <b>${esc(cand.name)}</b>? <button class="small" data-action="merge-into" data-from="${cand.id}" data-to="${exerciseId}">Sí, unir</button></div>`;
+  }
   const main = sg.weight != null ? `${fmtKg(sg.weight)} kg × ${suggestedReps(sg, 0)}`
     : sg.kind === 'calibrate' ? 'Calibra el peso' : `Apunta a ${suggestedReps(sg, 0)} reps`;
-  return `<details class="suggest ${sg.kind}"><summary><b>💡 ${main}</b>${KIND[sg.kind] ? `<span class="kind">${KIND[sg.kind]}</span>` : ''}</summary>${sg.lastText ? `<small>Última vez: ${esc(sg.lastText)}</small>` : ''}<small>${esc(sg.note)}</small></details>`;
+  return `<details class="suggest ${sg.kind}"><summary><b>💡 ${main}</b>${KIND[sg.kind] ? `<span class="kind">${KIND[sg.kind]}</span>` : ''}</summary>${sg.lastText ? `<small>Última vez: ${esc(sg.lastText)}</small>` : ''}<small>${esc(sg.note)}</small></details>${hint}`;
+}
+
+/** Hoy + esta semana y la próxima: qué toca, qué hiciste y qué falta. */
+function viewCalendar() {
+  const weeks = buildWeeks({ now: Date.now(), routines: state.routines, workouts: state.workouts });
+  if (!weeks.some((w) => w.days.some((d) => d.routine))) return '';
+  const today = weeks[0].days.find((d) => d.isToday);
+  const n = (r) => r.exerciseIds.filter(exById).length;
+  let hoy;
+  if (today.routine && (today.status === 'planned')) {
+    hoy = `<div class="card accent today-card"><div class="row between"><div><small class="muted">Hoy · ${today.weekday}</small><h3>${esc(today.routine.name)}</h3><span class="muted">${n(today.routine)} ejercicios</span></div><button class="primary" data-action="start" data-id="${today.routine.id}">Empezar</button></div></div>`;
+  } else if (today.status === 'done' || today.status === 'partial') {
+    hoy = `<div class="card today-card"><div class="row between"><div><small class="muted">Hoy</small><h3>${today.status === 'partial' ? '◐' : '✓'} ${esc(today.routine.name)}</h3></div><button class="small" data-action="cal-day" data-iso="${today.iso}">Ver</button></div></div>`;
+  } else if (today.status === 'extra') {
+    hoy = `<div class="card today-card"><small class="muted">Hoy</small><h3>✓ ${esc(today.extra.name)}</h3></div>`;
+  } else {
+    hoy = `<div class="card today-card"><b>Hoy no toca entrenar</b></div>`;
+  }
+  const sym = { done: '✓', partial: '◐', missed: '–', planned: '', extra: '•', rest: '' };
+  const cell = (d) => {
+    const label = d.routine ? shortName(d.routine.name) : d.status === 'extra' ? shortName(d.extra.name) : '';
+    const click = d.routine || d.extra;
+    return `<button class="cal-day ${d.status} ${d.isToday ? 'today' : ''}" ${click ? `data-action="cal-day" data-iso="${d.iso}"` : 'disabled'} aria-label="${d.weekday} ${d.date.getDate()}${label ? `, ${esc(label)}` : ''}">
+      <small>${'LMXJVSD'[d.idx]}</small><b>${d.date.getDate()}</b><i>${sym[d.status]}</i><em>${esc(label)}</em></button>`;
+  };
+  const grid = weeks.map((w, i) => {
+    const lab = planWeekLabel(w.days[0].date.getTime());
+    return `<div class="cal-head"><b>${i === 0 ? 'Esta semana' : 'Próxima'}</b><span class="muted">${lab ? esc(lab.text) : ''}</span>${lab?.deload ? '<span class="pill">Descarga</span>' : ''}</div>
+      <div class="cal-grid">${w.days.map(cell).join('')}</div>`;
+  }).join('');
+  return `${hoy}<div class="cal">${grid}</div>`;
 }
 
 function viewTrain() {
   const a = state.active;
   if (!a) {
+    const cal = viewCalendar();
     const today = todayName();
     const order = (r) => (r.fromPlan ? WEEKDAYS.indexOf(r.weekday) : 99);
     const routines = [...state.routines].sort((x, y) => order(x) - order(y)).map((r) => `
@@ -556,11 +598,12 @@ function viewTrain() {
     const thisWeek = state.workouts.filter((w) => w.start >= weekAgo).length;
     return `
       ${planTrainBanner()}
+      ${cal}
       <div class="actions2">
         <button class="primary" data-action="start">+ Entreno vacío</button>
         <button data-action="voice-open">🎙️ Dictar</button>
       </div>
-      ${routines || '<p class="muted">Sin rutinas. Crea un plan en la pestaña Plan.</p>'}
+      ${cal ? (routines ? `<details class="how"><summary>Todas las rutinas</summary>${routines}</details>` : '') : (routines || '<p class="muted">Sin rutinas. Crea un plan en la pestaña Plan.</p>')}
       ${state.workouts.length ? `<p class="statline"><b>${thisWeek}</b> esta semana · <b>${state.workouts.length}</b> entrenos · <b>${fmtKg(state.workouts.reduce((t, w) => t + workoutVolume(w), 0) / 1000)}</b> t</p>` : ''}`;
   }
 
@@ -598,7 +641,7 @@ function viewTrain() {
         </div>
         ${g ? `<div class="blockinfo">🔗 <b>${blockLetter(a.entries, e.group)}</b> · ${g.next ? `toca <b>${esc(exName(g.next.entry.exerciseId))}</b> · serie ${g.next.si + 1}` : 'bloque completo ✓'}</div>` : ''}
         ${targetHTML(tg, timed)}
-        ${suggestHTML(e.suggest)}
+        ${suggestHTML(e.suggest, e.exerciseId)}
         <table class="sets">
           <thead><tr><th>#</th><th>Anterior</th><th>Kg</th><th>${timed ? 'Seg' : 'Reps'}</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
@@ -678,7 +721,13 @@ function viewRoutines() {
         </div>`).join('')}
     </div>`).join('');
 
+  const dups = findDuplicates(state.exercises).slice(0, 3);
+  const dupHTML = dups.length ? `
+    <div class="card accent stack"><b>¿Son el mismo ejercicio?</b>
+      ${dups.map(([x, y]) => `<div class="row between"><span>${esc(x.name)} ≈ ${esc(y.name)}</span><button class="small" data-action="merge-pair" data-a="${x.id}" data-b="${y.id}">Unir</button></div>`).join('')}
+    </div>` : '';
   return `
+    ${dupHTML}
     <div class="row between"><h2>Mis rutinas</h2><button class="primary" data-action="new-routine">+ Nueva</button></div>
     ${routines || '<p class="muted">Sin rutinas.</p>'}
     <div class="row between" style="margin-top:20px"><h2>Ejercicios</h2><button data-action="new-exercise">+ Nuevo</button></div>
@@ -701,8 +750,11 @@ function viewHistory() {
   return `<h2>Historial</h2>${tools}` + [...state.workouts].reverse().map((w) => `
     <div class="card">
       <div class="row between">
-        <div><h3>${esc(w.name)}</h3><span class="muted">${fmtDate(w.start)} · ${fmtDuration(w.end - w.start)} · ${fmtKg(workoutVolume(w))} kg</span></div>
-        <button class="ghost danger" data-action="delete-workout" data-id="${w.id}" aria-label="Borrar entreno">✕</button>
+        <div><h3>${esc(w.name)}${w.partial ? ' <span class="pill warn">parcial</span>' : ''}</h3><span class="muted">${fmtDate(w.start)} · ${fmtDuration(w.end - w.start)} · ${fmtKg(workoutVolume(w))} kg</span></div>
+        <div class="row">
+          <button class="ghost" data-action="workout-edit" data-id="${w.id}" aria-label="Editar entreno">✏️</button>
+          <button class="ghost danger" data-action="delete-workout" data-id="${w.id}" aria-label="Borrar entreno">✕</button>
+        </div>
       </div>
       <div class="stack" style="margin-top:8px">
         ${w.entries.map((e) => {
@@ -787,7 +839,8 @@ function openDialog(html, onSubmit) {
   const form = $dialog.querySelector('form');
   form.addEventListener('submit', (ev) => {
     if (ev.submitter?.value === 'cancel') return;
-    onSubmit(new FormData(form), form, ev.submitter?.value);
+    // Si el manejador devuelve false, el diálogo se queda abierto (por ejemplo, cuando falta algo por elegir).
+    if (onSubmit(new FormData(form), form, ev.submitter?.value) === false) ev.preventDefault();
   });
   $dialog.showModal();
 }
@@ -837,8 +890,10 @@ function exerciseDialog(ex) {
         </select>
       </label>
     </div>
-    ${dialogButtons(ex ? 'Guardar' : 'Crear')}`,
-  (fd) => {
+    ${dialogButtons(ex ? 'Guardar' : 'Crear')}
+    ${ex ? '<button class="block ghost" value="merge" formnovalidate style="margin-top:8px">⇄ Unir con otro ejercicio…</button>' : ''}`,
+  (fd, _f, value) => {
+    if (value === 'merge') { mergeDialog(ex); return; }
     const data = {
       name: fd.get('name').trim(),
       muscle: fd.get('muscle').trim(),
@@ -853,11 +908,60 @@ function exerciseDialog(ex) {
 
 /* ---------- acciones ---------- */
 
+/** Series del entreno en curso: hechas (✓), con datos sin marcar y sugeridas sin tocar. */
+function summarizeActive(a) {
+  let done = 0, typed = 0, sugs = 0;
+  const skipped = [];
+  a.entries.forEach((e) => {
+    let got = 0;
+    e.sets.forEach((s) => {
+      if (s.done) { done++; got++; }
+      else if (num(s.r) > 0 && !s.sug) { typed++; got++; }
+      else if (num(s.r) > 0 && s.sug) sugs++;
+    });
+    if (!got) skipped.push(e.exerciseId);
+  });
+  return { done, typed, sugs, skipped };
+}
+
+/** Entreno a guardar: lo hecho, y opcionalmente lo escrito sin marcar o lo sugerido sin tocar. Lo que no se hizo queda anotado. */
+function workoutFromActive(a, { typed, sugs }) {
+  const include = (s) => s.done || (typed && num(s.r) > 0 && !s.sug) || (sugs && num(s.r) > 0 && s.sug);
+  const entries = [], skipped = [];
+  let planned = 0, got = 0;
+  a.entries.forEach(({ suggest, ...e }) => {
+    planned += e.sets.length;
+    const sets = e.sets.filter(include).map(({ sug, ...s }) => ({ ...s, done: true }));
+    if (sets.length) { entries.push({ ...e, sets, planned: e.sets.length }); got += sets.length; } else skipped.push(e.exerciseId);
+  });
+  return { id: uid(), name: a.name, start: a.start, end: Date.now(), entries, routineId: a.routineId, skipped, partial: skipped.length > 0 || got < planned };
+}
+
+function confirmMerge(fromId, toId) {
+  const f = exById(fromId), t = exById(toId);
+  if (!f || !t) return;
+  ask(`¿Unir «${f.name}» con «${t.name}»? Todo el historial de «${f.name}» pasará a «${t.name}».`, 'Unir', () => {
+    mergeExercises(state, fromId, toId, { newEntry: (id, tg) => newEntry(id, tg) });
+    toast('Ejercicios unidos');
+    commit();
+  });
+}
+
+function mergeDialog(ex) {
+  const others = state.exercises.filter((e) => e.id !== ex.id).sort((a, b) => a.name.localeCompare(b.name));
+  openDialog(`
+    <h2>Unir «${esc(ex.name)}» con…</h2>
+    <div class="pick-list">${others.map((o) => `<label><input type="radio" name="into" value="${o.id}" required> ${esc(o.name)} <span class="muted">· ${esc(o.muscle)}</span></label>`).join('')}</div>
+    ${dialogButtons('Unir')}`,
+  (fd) => { if (fd.get('into')) confirmMerge(ex.id, fd.get('into')); });
+}
+
 const actions = {
   start(id) {
     const r = state.routines.find((x) => x.id === id);
     state.active = {
       name: r ? r.name : 'Entreno libre',
+      routineId: r?.id,
       start: Date.now(),
       entries: r ? r.exerciseIds.filter(exById).map((exId) => newEntry(exId, r.targets?.[exId], { deload: !!(r.fromPlan && weekInfo(state.plan)?.wp?.deload) })) : [],
       timer: null,
@@ -974,19 +1078,84 @@ const actions = {
   },
   finish() {
     const a = state.active;
-    const entries = a.entries
-      .map(({ suggest, ...e }) => ({ ...e, sets: e.sets.filter((s) => s.done) }))
-      .filter((e) => e.sets.length);
-    const end = () => { state.active = null; clearNotes(); commit(); };
-    if (!entries.length) {
-      ask('No has completado ninguna serie. ¿Descartar el entreno?', 'Descartar', end);
-    } else {
-      state.workouts.push({ id: uid(), name: a.name, start: a.start, end: Date.now(), entries });
-      tab = 'history';
-      end();
+    const sm = summarizeActive(a);
+    const logged = sm.done + sm.typed;
+    const exDone = a.entries.length - sm.skipped.length;
+    openDialog(`
+      <h2>Terminar entreno</h2>
+      ${logged ? `<p class="finish-sum"><b>${logged}</b> series hechas · <b>${exDone}</b> de <b>${a.entries.length}</b> ejercicios</p>` : '<p class="muted">Aún no hay series registradas.</p>'}
+      ${sm.typed ? `<label class="switch"><input type="checkbox" name="typed" checked><span><b>${sm.typed} con datos sin marcar ✓</b><small>Guardarlas como hechas</small></span></label>` : ''}
+      ${sm.sugs ? `<label class="switch"><input type="checkbox" name="sugs"><span><b>${sm.sugs} sugeridas sin confirmar</b><small>Marca si las hiciste tal como estaban</small></span></label>` : ''}
+      ${sm.skipped.length && logged ? `<p class="muted">Sin hacer: ${esc(sm.skipped.map(exName).join(', '))}</p>` : ''}
+      <div class="stack" style="margin-top:14px">
+        ${sm.done + sm.typed + sm.sugs ? '<button class="block primary" value="save">Guardar entreno</button>' : ''}
+        <button class="block" value="cancel" formnovalidate>Seguir entrenando</button>
+        <button class="block ghost danger" value="discard">Descartar</button>
+      </div>`,
+    (fd, _f, value) => {
+      if (value === 'discard') {
+        ask('¿Descartar este entreno? Se perderán las series.', 'Descartar', () => { state.active = null; clearNotes(); commit(); });
+        return;
+      }
+      const w = workoutFromActive(a, { typed: fd.has('typed'), sugs: fd.has('sugs') });
+      if (!w.entries.length) { toast(sm.sugs ? 'Marca las series que hiciste para guardarlas' : 'No hay series que guardar'); return false; }
+      state.workouts.push(w);
+      state.workouts.sort((x, y) => x.start - y.start);
+      state.active = null;
+      clearNotes();
+      tab = 'train';
+      commit();
+      toast(w.partial ? 'Guardado como sesión parcial: lo tendré en cuenta para tus próximas cargas' : 'Entreno guardado');
+    });
+    return false;
+  },
+  // ---- calendario de la pestaña Entrenar
+  'cal-day'(_, el) {
+    const day = buildWeeks({ now: Date.now(), routines: state.routines, workouts: state.workouts }).flatMap((w) => w.days).find((d) => d.iso === el.dataset.iso);
+    if (!day) return false;
+    const title = `${day.weekday} ${day.date.getDate()}`;
+    const r = day.routine;
+    if (r) {
+      const items = r.exerciseIds.filter(exById).map((id) => {
+        const t = r.targets?.[id];
+        return `<li>${esc(exName(id))}${t ? ` <span class="muted">${t.sets}×${esc(t.reps)}</span>` : ''}</li>`;
+      }).join('');
+      const done = day.workout ? `<p class="muted">${day.status === 'partial' ? '◐ Sesión parcial' : '✓ Hecho'}${day.movedTo ? ` · el ${fmtDate(day.workout.start)}` : ''}</p>` : '';
+      openDialog(`
+        <h2>${title} · ${esc(r.name)}</h2>
+        ${done}
+        <ul class="exlist">${items}</ul>
+        <div class="stack" style="margin-top:12px">
+          <button class="block primary" value="start">${day.workout ? 'Hacerlo otra vez' : 'Empezar'}</button>
+          ${day.workout ? '<button class="block" value="history">Ver en historial</button>' : ''}
+          <button class="block ghost" value="cancel" formnovalidate>Cerrar</button>
+        </div>`,
+      (fd, _f, value) => {
+        if (value === 'start') { actions.start(r.id); commit(); }
+        else if (value === 'history') { tab = 'history'; render(); window.scrollTo(0, 0); }
+      });
+    } else if (day.extra) {
+      openDialog(`
+        <h2>${title} · ${esc(day.extra.name)}</h2>
+        <p class="muted">Entreno fuera del plan</p>
+        <div class="stack" style="margin-top:12px">
+          <button class="block" value="history">Ver en historial</button>
+          <button class="block ghost" value="cancel" formnovalidate>Cerrar</button>
+        </div>`,
+      () => { tab = 'history'; render(); window.scrollTo(0, 0); });
     }
     return false;
   },
+  // ---- unir ejercicios duplicados
+  'merge-pair'(_, el) {
+    const [a, b] = [el.dataset.a, el.dataset.b];
+    const count = (id) => state.workouts.filter((w) => w.entries.some((e) => e.exerciseId === id)).length;
+    // Se conserva el que tiene más historial; a igualdad, el primero.
+    const [from, to] = count(a) >= count(b) ? [b, a] : [a, b];
+    confirmMerge(from, to);
+    return false;
+  },
+  'merge-into'(_, el) { confirmMerge(el.dataset.from, el.dataset.to); return false; },
   discard() {
     ask('¿Descartar este entreno? Se perderán las series.', 'Descartar', () => { state.active = null; clearNotes(); commit(); });
     return false;
@@ -1353,7 +1522,7 @@ function toast(msg) {
 
 initSessions({
   state: () => state,
-  uid, esc, ask, toast, fmtSecs, render, commit,
+  uid, esc, ask, toast, fmtSecs, render, commit, openDialog, dialogButtons,
   newEntry: (id) => newEntry(id),
   setTab: (t) => { tab = t; },
 });

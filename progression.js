@@ -90,6 +90,12 @@ export function suggestLoad({ name, reps, history = [], startLoad = 0, deload = 
     note = `No llegaste a ${lo} reps con ${fmt(maxW)} kg → baja un 5 % para trabajar dentro del rango.`;
   }
 
+  // Si la última vez quedó incompleto (menos series de las previstas), no se sube el peso: se repite y se completa.
+  if (kind === 'up' && last.incomplete) {
+    weight = maxW; kind = 'hold';
+    note = `La última vez no terminaste todas las series: repite ${fmt(maxW)} kg y completa el rango.`;
+  }
+
   if (deload) {
     weight = maxW * 0.9; kind = 'deload';
     note = `Semana de descarga: ${fmt(roundLoad(weight))} kg (≈ 90 %) y la mitad de series para recuperarte.`;

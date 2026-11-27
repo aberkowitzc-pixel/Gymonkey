@@ -3,12 +3,13 @@
 
 import { callAI } from './plan.js';
 import { MAX_DOC } from './context.js';
+import { matchExercise, addAlias, norm } from './exercises.js';
+import { guessRoutine } from './calendar.js';
 
 let ctx;
 export function initSessions(c) { ctx = c; }
 const S = () => ctx.state();
 const esc = (s) => ctx.esc(s);
-const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 const num = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
 const pad = (n) => String(n).padStart(2, '0');
 const isoLocal = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
@@ -41,7 +42,7 @@ function close() {
 /** Al cambiar de pestaña: si hay un borrador sin guardar, se pregunta antes de perderlo. */
 export function sessionsLeave(next) {
   if (sv.step === 'review' && sv.draft && !sv.loading) {
-    ctx.ask('¿Salir sin guardar? Se perderá lo que acabas de ordenar.', 'Salir', () => { close(); next(); });
+    ctx.ask(sv.target === 'edit' ? '¿Salir sin guardar los cambios?' : '¿Salir sin guardar? Se perderá lo que acabas de ordenar.', 'Salir', () => { close(); next(); });
     return;
   }
   close();
@@ -159,7 +160,7 @@ export function sessionsTick() {
 /* ---------- duplicados ---------- */
 
 const sigOf = (date, entries) => `${date}|${entries.map(({ name, sets }) => `${norm(name)}:${sets.map(([w, r]) => `${w}x${r}`).join(',')}`).join(';')}`;
-const draftSig = (s) => sigOf(s.date, s.entries.map((e) => ({ name: e.exercise, sets: e.sets.map((t) => [num(t.weight_kg), num(t.reps)]) })));
+const draftSig = (s) => sigOf(s.date, s.entries.map((e) => ({ name: resolveExercise(e).ex?.name || e.exercise, sets: e.sets.map((t) => [num(t.weight_kg), num(t.reps)]) })));
 function existingSigs() {
   const st = S();
   const name = (id) => st.exercises.find((e) => e.id === id)?.name || '';
@@ -227,7 +228,7 @@ function reviewView() {
     return `
       <details class="card sess" ${many ? '' : 'open'}>
         <summary>
-          <label class="sess-head"><input type="checkbox" data-sv-inc="${i}" ${sv.include[i] ? 'checked' : ''}>
+          <label class="sess-head">${sv.target === 'edit' ? '' : `<input type="checkbox" data-sv-inc="${i}" ${sv.include[i] ? 'checked' : ''}>`}
             <span><b>${esc(s.date || 'Sin fecha')}</b> · ${esc(s.name || 'Entreno')}<br><small class="muted">${s.entries.length} ejercicios · ${sets} series</small></span></label>
           ${dup ? '<span class="pill">ya en tu historial</span>' : ''}${inc ? `<span class="pill warn">⚠️ ${inc}</span>` : ''}
         </summary>
@@ -237,7 +238,7 @@ function reviewView() {
         </div>
         ${s.entries.map((e, j) => `
           <div class="svent">
-            <div class="row between"><b>${esc(e.exercise)}</b><span class="row">${e.block ? `<span class="pill">🔗 ${esc(e.block)}</span>` : ''}<button class="ghost danger small" data-action="sv-del-entry" data-i="${i}" data-j="${j}" aria-label="Quitar ejercicio">✕</button></span></div>
+            <div class="row between"><button class="ghost link" data-action="sv-link" data-i="${i}" data-j="${j}" aria-label="Cambiar el ejercicio vinculado"><b>${esc(e.exercise)}</b>${linkPill(e)}</button><span class="row">${e.block ? `<span class="pill">🔗 ${esc(e.block)}</span>` : ''}<button class="ghost danger small" data-action="sv-del-entry" data-i="${i}" data-j="${j}" aria-label="Quitar ejercicio">✕</button></span></div>
             <table class="sets"><thead><tr><th>#</th><th>Kg</th><th>${e.type === 'time' ? 'Seg' : 'Reps'}</th><th></th></tr></thead><tbody>
               ${e.sets.map((t, k) => `
                 <tr class="${t.complete ? '' : 'warn'}">
@@ -247,6 +248,7 @@ function reviewView() {
                   <td>${t.complete ? '' : '⚠️'}<button class="ghost danger small" data-action="sv-del-set" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar serie">✕</button></td>
                 </tr>`).join('')}
             </tbody></table>
+            <button class="ghost small" data-action="sv-add-set" data-i="${i}" data-j="${j}">+ Serie</button>
             ${e.notes ? `<small class="muted">${esc(e.notes)}</small>` : ''}
           </div>`).join('') || '<p class="muted">Sin ejercicios.</p>'}
       </details>`;
@@ -269,22 +271,42 @@ function reviewView() {
     <div class="card"><p style="margin:0">💬 ${esc(sv.message || 'Esto es lo que he entendido:')}</p></div>
     ${questions}
     ${sessions || '<div class="empty">No encontré sesiones en el texto.</div>'}
-    <button class="primary block" data-action="sv-save" ${n ? '' : 'disabled'}>${sv.target === 'active' ? 'Añadir a mi entreno' : n === 1 ? 'Guardar 1 sesión' : `Guardar ${n} sesiones`}</button>
-    <button class="block" style="margin-top:8px" data-action="sv-back">✏️ Editar el texto</button>
+    <button class="primary block" data-action="sv-save" ${n ? '' : 'disabled'}>${sv.target === 'edit' ? 'Guardar cambios' : sv.target === 'active' ? 'Añadir a mi entreno' : n === 1 ? 'Guardar 1 sesión' : `Guardar ${n} sesiones`}</button>
+    ${sv.target === 'edit' ? '' : '<button class="block" style="margin-top:8px" data-action="sv-back">✏️ Editar el texto</button>'}
     <button class="ghost block" data-action="sv-cancel">Cancelar</button>`;
 }
 
 /* ---------- guardar ---------- */
 
-function ensureExercise(e) {
+/** ¿A qué ejercicio de la biblioteca corresponde? Elegido por la persona, igual, con alias o parecido ("Press banca" ≈ "Press de banca"). */
+function resolveExercise(e) {
   const st = S();
-  const key = norm(e.exercise);
-  let ex = st.exercises.find((x) => norm(x.name) === key);
-  if (!ex) {
-    ex = { id: ctx.uid(), name: e.exercise.trim(), muscle: e.muscle_group || 'Otros', type: e.type === 'time' ? 'time' : 'reps' };
-    st.exercises.push(ex);
+  if (e.exerciseId) {
+    const ex = st.exercises.find((x) => x.id === e.exerciseId);
+    if (ex) return { ex, how: 'linked' };
   }
+  if (e.forceNew) return { ex: null, how: 'new' };
+  const m = matchExercise(e.exercise, st.exercises);
+  return m ? { ex: m.exercise, how: m.how } : { ex: null, how: 'new' };
+}
+
+function ensureExercise(e) {
+  const r = resolveExercise(e);
+  if (r.ex) {
+    // Recuerda el otro nombre para reconocerlo la próxima vez.
+    if (r.how === 'similar' || r.how === 'linked') addAlias(r.ex, e.exercise);
+    return r.ex;
+  }
+  const ex = { id: ctx.uid(), name: e.exercise.trim(), muscle: e.muscle_group || 'Otros', type: e.type === 'time' ? 'time' : 'reps' };
+  S().exercises.push(ex);
   return ex;
+}
+
+/** Avisa de cómo se reconoció el ejercicio solo cuando no es evidente. */
+function linkPill(e) {
+  const r = resolveExercise(e);
+  if (!r.ex) return ' <span class="pill warn">nuevo</span>';
+  return norm(r.ex.name) === norm(e.exercise) ? '' : ` <span class="pill">≈ ${esc(r.ex.name)}</span>`;
 }
 
 /** En el historial se guarda todo como hecho; en un entreno en curso, lo incompleto queda pendiente para que lo termines. */
@@ -318,12 +340,44 @@ function applyNew() {
       return entry;
     });
     const start = fromISO(s.date);
-    st.workouts.push({ id: ctx.uid(), name: s.name || 'Entreno', start, end: start + Math.max(1, s.duration_minutes || 60) * 60000, entries, source: sv.kind === 'import' ? 'importado' : 'dictado' });
+    const w = { id: ctx.uid(), name: s.name || 'Entreno', start, end: start + Math.max(1, s.duration_minutes || 60) * 60000, entries, source: sv.kind === 'import' ? 'importado' : 'dictado' };
+    // Si se parece a una rutina del plan, queda ligado a ella (así el calendario y las cargas lo reconocen).
+    const rt = guessRoutine(st.routines, entries.map((x) => x.exerciseId), s.date);
+    if (rt) w.routineId = rt.id;
+    st.workouts.push(w);
     added++;
   });
   // El historial se recorre siempre en orden cronológico.
   st.workouts.sort((a, b) => a.start - b.start);
   return { added, skipped };
+}
+
+function applyEdit() {
+  const st = S();
+  const w = st.workouts.find((x) => x.id === sv.editId);
+  const s = sv.draft.sessions[0];
+  if (!w || !s) return false;
+  const src = s.entries.filter((e) => mapSets(e).length);
+  const gids = groupIds(src);
+  const old = w.entries;
+  w.entries = src.map((e, k) => {
+    const ex = ensureExercise(e);
+    const entry = { exerciseId: ex.id, sets: mapSets(e) };
+    if (gids[k]) entry.group = gids[k];
+    const prev = old.find((o) => o.exerciseId === ex.id);
+    if (prev?.target) entry.target = prev.target;
+    if (prev?.planned != null) entry.planned = Math.max(prev.planned, entry.sets.length);
+    return entry;
+  });
+  w.name = s.name || w.name;
+  if (isoLocal(w.start) !== s.date) { const dur = w.end - w.start; w.start = fromISO(s.date); w.end = w.start + dur; }
+  w.skipped = (w.skipped || []).filter((id) => !w.entries.some((e) => e.exerciseId === id));
+  if (!w.routineId) {
+    const rt = guessRoutine(st.routines, w.entries.map((x) => x.exerciseId), s.date);
+    if (rt) w.routineId = rt.id;
+  }
+  st.workouts.sort((a, b) => a.start - b.start);
+  return true;
 }
 
 function applyToActive() {
@@ -346,6 +400,15 @@ function applyToActive() {
 
 function save() {
   const inc = sv.draft.sessions.filter((_, i) => sv.include[i]);
+  if (sv.target === 'edit') {
+    if (!validISO(sv.draft.sessions[0].date)) { ctx.toast('Pon una fecha válida'); return; }
+    if (!applyEdit()) { ctx.toast('No se encontró el entreno'); return; }
+    close();
+    ctx.setTab('history');
+    ctx.commit();
+    ctx.toast('Cambios guardados');
+    return;
+  }
   if (sv.target !== 'active') {
     const bad = sv.draft.sessions.findIndex((s, i) => sv.include[i] && !validISO(s.date));
     if (bad >= 0) { ctx.toast('Falta la fecha de una sesión: ponla para poder guardarla'); document.querySelectorAll('details.sess')[bad]?.setAttribute('open', ''); return; }
@@ -417,7 +480,57 @@ export async function onSessionsFile(input) {
   ctx.toast(`Cargado: ${file.name}`);
 }
 
+function openEdit(id) {
+  const st = S();
+  const w = st.workouts.find((x) => x.id === id);
+  if (!w) return;
+  const letters = {};
+  let next = 0;
+  const entries = w.entries.map((e) => {
+    const ex = st.exercises.find((x) => x.id === e.exerciseId);
+    let block = '';
+    if (e.group) { letters[e.group] ??= String.fromCharCode(65 + next++); block = letters[e.group]; }
+    return {
+      exercise: ex?.name || 'Ejercicio', exerciseId: e.exerciseId, muscle_group: ex?.muscle || 'Otros', type: ex?.type === 'time' ? 'time' : 'reps', block, notes: '',
+      sets: e.sets.filter((s) => s.done !== false).map((s) => ({ weight_kg: num(s.w), reps: num(s.r), complete: true })),
+    };
+  });
+  Object.assign(sv, {
+    active: true, step: 'review', kind: 'edit', target: 'edit', editId: id, text: '', loading: null, error: null, lastRun: null,
+    message: 'Edita lo que necesites.', questions: [], include: [true],
+    draft: { sessions: [{ date: isoLocal(w.start), name: w.name, duration_minutes: Math.round((w.end - w.start) / 60000), entries, notes: '' }] },
+  });
+  ctx.render();
+  window.scrollTo(0, 0);
+}
+
 export const sessionsActions = {
+  'workout-edit'(id) { openEdit(id); return false; },
+  'sv-add-set'(_, el) {
+    const e = sv.draft.sessions[+el.dataset.i].entries[+el.dataset.j];
+    const last = e.sets.at(-1);
+    e.sets.push({ weight_kg: last?.weight_kg || 0, reps: last?.reps || 0, complete: false });
+    ctx.render();
+    return false;
+  },
+  'sv-link'(_, el) {
+    const e = sv.draft.sessions[+el.dataset.i].entries[+el.dataset.j];
+    const cur = resolveExercise(e);
+    const list = [...S().exercises].sort((a, b) => a.name.localeCompare(b.name));
+    ctx.openDialog(`
+      <h2>Vincular «${esc(e.exercise)}»</h2>
+      <div class="pick-list">
+        <label><input type="radio" name="link" value="" ${cur.ex ? '' : 'checked'}> ➕ Crear como ejercicio nuevo</label>
+        ${list.map((x) => `<label><input type="radio" name="link" value="${x.id}" ${cur.ex?.id === x.id ? 'checked' : ''}> ${esc(x.name)} <span class="muted">· ${esc(x.muscle)}</span></label>`).join('')}
+      </div>
+      ${ctx.dialogButtons('Vincular')}`,
+    (fd) => {
+      const v = fd.get('link');
+      if (v) { e.exerciseId = v; delete e.forceNew; } else { delete e.exerciseId; e.forceNew = true; }
+      ctx.render();
+    });
+    return false;
+  },
   'voice-open'() { open('voice', 'new'); return false; },
   'voice-open-active'() { open('voice', 'active'); return false; },
   'import-open'() { open('import', 'new'); return false; },

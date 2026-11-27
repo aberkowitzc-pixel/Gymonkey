@@ -3,6 +3,7 @@
 
 import { DEMO_AI } from './config.js';
 import { MAX_DOC, PROMPT_OTRA_IA, buildExport } from './context.js';
+import { matchExercise, addAlias } from './exercises.js';
 
 export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const GOALS = [
@@ -54,10 +55,10 @@ export const planBusy = () => !!ui.loading;
 /** Semana del plan en la que se entra (1 si se empieza de cero; más si la persona ya llevaba semanas). */
 export const startWeek = (plan) => Math.max(1, Math.min(plan.total_weeks || 1, Math.round(plan.start_week) || 1));
 
-export function weekInfo(plan) {
+export function weekInfo(plan, at = Date.now()) {
   if (!plan?.mesocycles?.length) return null;
   const started = !!plan.startDate;
-  const raw = started ? Math.floor((startOfDay(Date.now()) - plan.startDate) / (7 * DAY)) + 1 : 1;
+  const raw = started ? Math.floor((startOfDay(at) - plan.startDate) / (7 * DAY)) + 1 : 1;
   const finished = raw > plan.total_weeks;
   const week = Math.max(1, Math.min(raw, plan.total_weeks));
   let acc = 0;
@@ -187,6 +188,7 @@ function trainingSummary() {
   return S().workouts.slice(-8).map((w) => ({
     date: new Date(w.start).toISOString().slice(0, 10),
     routine: w.name,
+    ...(w.partial ? { partial: true, skipped: (w.skipped || []).map((id) => ctx.exName(id)) } : {}),
     exercises: w.entries.map((e) => `${ctx.exName(e.exerciseId)}: ${e.sets.map((s) => ctx.fmtSet(e.exerciseId, s)).join(', ')}`),
   }));
 }
@@ -219,12 +221,14 @@ function setPlan(data, message, changes, keepProgress) {
 
 function findOrCreateExercise(x) {
   const st = S();
-  const key = norm(x.name);
-  let ex = st.exercises.find((e) => norm(e.name) === key);
-  if (!ex) {
-    ex = { id: ctx.uid(), name: x.name.trim(), muscle: x.muscle_group || 'Otros', type: x.type === 'time' ? 'time' : 'reps' };
-    st.exercises.push(ex);
+  // Reconoce el ejercicio aunque se llame un poco distinto ("Press banca" = "Press de banca") y recuerda el nombre.
+  const m = matchExercise(x.name, st.exercises);
+  if (m) {
+    if (m.how === 'similar') addAlias(m.exercise, x.name);
+    return m.exercise;
   }
+  const ex = { id: ctx.uid(), name: x.name.trim(), muscle: x.muscle_group || 'Otros', type: x.type === 'time' ? 'time' : 'reps' };
+  st.exercises.push(ex);
   return ex;
 }
 
@@ -767,11 +771,16 @@ export const planActions = {
 export function planTrainBanner() {
   const plan = S().plan;
   const wi = weekInfo(plan);
-  if (!wi?.started) return '';
-  const needsUpdate = plan.appliedMeso !== wi.meso;
-  return `
-    <div class="card plan-banner">
-      <div class="row between"><b>Semana ${wi.week}/${plan.total_weeks} · ${esc(plan.mesocycles[wi.meso].name)}</b>${wi.wp?.deload ? '<span class="pill">Descarga</span>' : ''}</div>
-      ${needsUpdate ? `<button class="primary block" style="margin-top:8px" data-action="plan-apply">Actualizar rutinas</button>` : ''}
-    </div>`;
+  if (!wi?.started || plan.appliedMeso === wi.meso) return '';
+  return `<div class="card plan-banner"><button class="primary block" data-action="plan-apply">Nuevo bloque: actualizar rutinas</button></div>`;
+}
+
+/** Etiqueta de la semana del plan que contiene la fecha dada: "S3/8 · Acumulación". */
+export function planWeekLabel(ts) {
+  const plan = S().plan;
+  if (!plan?.startDate) return null;
+  const wi = weekInfo(plan, ts);
+  if (!wi) return null;
+  if (wi.finished) return { text: 'Plan completado', deload: false };
+  return { text: `S${wi.week}/${plan.total_weeks} · ${plan.mesocycles[wi.meso].name}`, deload: !!wi.wp?.deload };
 }

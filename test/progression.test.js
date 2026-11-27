@@ -114,3 +114,12 @@ test('sin objetivo del plan, el rango se deduce de la última sesión', () => {
   const s = suggestLoad({ name: 'Remo', reps: inferRange([{ r: 10 }, { r: 10 }, { r: 10 }]), history: [sess(7, [[40, 10], [40, 10], [40, 10]])], now: NOW });
   assert.equal(s.kind, 'hold');
 });
+
+test('si la última sesión quedó incompleta no sube el peso: repite y completa', () => {
+  const full = suggestLoad({ name: 'Press de banca', reps: '6-8', history: [{ ...sess(7, [[60, 8], [60, 8]]), incomplete: false }], now: NOW });
+  assert.equal(full.kind, 'up');
+  const partial = suggestLoad({ name: 'Press de banca', reps: '6-8', history: [{ ...sess(7, [[60, 8], [60, 8]]), incomplete: true }], now: NOW });
+  assert.equal(partial.kind, 'hold');
+  assert.equal(partial.weight, 60);
+  assert.match(partial.note, /no terminaste todas las series/);
+});

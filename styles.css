@@ -369,3 +369,32 @@ details.why { margin: 2px 0 8px; }
 details.ctx > summary { font-size: 0.95rem; }
 details.ctx textarea { margin-top: 8px; }
 .card { padding: 12px; }
+
+/* ---------- v8: calendario de entrenos, cierre de sesión y vínculo de ejercicios ---------- */
+.today-card h3 { margin: 2px 0; }
+.today-card small { font-size: 0.8rem; }
+.cal { margin-bottom: 14px; }
+.cal-head { display: flex; align-items: baseline; gap: 8px; margin: 10px 2px 6px; font-size: 0.9rem; }
+.cal-head .muted { font-size: 0.8rem; flex: 1; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-day { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 6px 0 5px; min-width: 0; border-radius: 10px; background: var(--card); border: 1px solid var(--line); color: var(--text); line-height: 1.15; }
+.cal-day small { font-size: 0.66rem; color: var(--muted); }
+.cal-day b { font-size: 1rem; }
+.cal-day i { font-style: normal; height: 1.1em; font-size: 0.85rem; line-height: 1.1em; }
+.cal-day em { font-style: normal; font-size: 0.62rem; max-width: 100%; padding: 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); min-height: 1em; }
+.cal-day.rest { background: transparent; border-color: transparent; color: var(--muted); }
+.cal-day.planned { border-style: dashed; border-color: var(--accent); }
+.cal-day.planned em { color: var(--accent); font-weight: 600; }
+.cal-day.done { background: var(--accent-soft); border-color: var(--accent); }
+.cal-day.done i { color: var(--accent); font-weight: 700; }
+.cal-day.partial { background: color-mix(in srgb, #f59e0b 18%, var(--card)); border-color: #f59e0b; }
+.cal-day.partial i { color: #b45309; }
+.cal-day.missed { opacity: 0.55; }
+.cal-day.extra i { color: var(--accent); }
+.cal-day.today { box-shadow: 0 0 0 2px var(--accent); }
+.cal-day:disabled { cursor: default; }
+.finish-sum { font-size: 1.05rem; margin: 4px 0 8px; }
+.exlist { padding-left: 18px; margin: 6px 0; line-height: 1.5; }
+.link-hint { margin-top: 6px; font-size: 0.85rem; color: var(--muted); }
+.link-hint b { color: var(--text); }
+button.link { text-align: left; }

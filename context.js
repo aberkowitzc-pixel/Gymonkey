@@ -135,8 +135,9 @@ export function buildExport({ profile = null, plan = null, week = null, workouts
   const recent = workouts.slice(-limit).reverse();
   if (!recent.length) out.push('- Aún no hay entrenos registrados.');
   for (const w of recent) {
-    out.push('', `### ${day(w.start)} — ${w.name} (${Math.max(1, Math.round((w.end - w.start) / 60000))} min)`);
+    out.push('', `### ${day(w.start)} — ${w.name} (${Math.max(1, Math.round((w.end - w.start) / 60000))} min)${w.partial ? ' · sesión parcial' : ''}`);
     for (const e of w.entries) out.push(`- ${exName(e.exerciseId)}: ${e.sets.map((s) => fmtSet(e.exerciseId, s)).join(', ') || '—'}`);
+    if (w.skipped?.length) out.push(`- Sin hacer: ${w.skipped.map(exName).join(', ')}`);
   }
   out.push('');
   return out.join('\n');
