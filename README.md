@@ -37,6 +37,8 @@ Sin iniciar sesión, los datos se guardan solo en el dispositivo. Con sesión in
 
 - **Diseño.** Sistema de diseño en `styles.css` (variables CSS, sin paso de compilación): colores con contraste AA verificado, escala tipográfica de 7 pasos, espaciado de 4 px, radios 8/12/20 y iconos SVG propios (`icons.js`). Tipografías Rubik (títulos), Heebo (texto) y JetBrains Mono (cifras), incluidas en `fonts/` para que funcionen sin conexión (licencia SIL OFL). El tema se elige en ⚙️ Ajustes: seguir al sistema, claro u oscuro.
 
+- **Acceso abierto con cuota.** Cualquiera puede registrarse con Google y usar la IA; cada persona tiene un límite diario por tipo de petición (ver `SETUP.md`). Los contadores viven en Upstash Redis.
+
 ## Probarla en local
 
 ```bash
