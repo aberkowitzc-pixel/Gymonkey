@@ -113,6 +113,7 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
   font-size: 0.75rem; color: var(--muted); padding: 8px 0 10px;
 }
 .tabbar button span { font-size: 1.3rem; }
+.tabbar button span.lbl { font-size: inherit; }
 .tabbar button.active { color: var(--accent); font-weight: 600; }
 
 /* Sets table */
@@ -174,12 +175,12 @@ dialog::backdrop { background: rgb(0 0 0 / 0.45); }
 .topbar .gear { font-size: 1.25rem; padding: 6px 10px; }
 .hint { margin: -4px 0 12px; font-size: 0.82rem; }
 button.small { font-size: 0.85rem; padding: 6px 8px; }
-button.link { text-align: left; padding: 6px 0; flex: 1; }
+button.link { text-align: start; padding: 6px 0; flex: 1; }
 button.link .muted { font-size: 0.8rem; }
 
 .sets td.btns { white-space: nowrap; width: 84px; }
 .icon { width: 38px; height: 38px; padding: 0; }
-.icon.play { margin-right: 4px; color: var(--accent); }
+.icon.play { margin-inline-end: 4px; color: var(--accent); }
 .sets tr.done .icon.check { background: var(--accent); border-color: var(--accent); color: #fff; }
 .sets tr.running td { background: var(--accent-soft); }
 .sets tr.running .icon.play { background: var(--text); border-color: var(--text); color: var(--card); }
@@ -201,7 +202,7 @@ body.has-banner main { padding-bottom: 190px; }
 .banner-main { display: flex; justify-content: space-between; align-items: flex-end; margin: 4px 0 8px; }
 .banner-main small { display: block; font-size: 0.75rem; opacity: 0.85; }
 .banner-main b { font-size: 2rem; line-height: 1.1; }
-.banner-main .right { text-align: right; }
+.banner-main .right { text-align: end; }
 .bar { height: 6px; border-radius: 3px; background: rgb(255 255 255 / 0.3); overflow: hidden; margin-bottom: 10px; }
 .bar i { display: block; height: 100%; background: #fff; transition: width 1s linear; }
 .banner-actions { display: flex; gap: 8px; }
@@ -233,34 +234,34 @@ legend { padding: 0; margin-bottom: 6px; display: flex; align-items: center; gap
 .card.accent { border-color: var(--accent); }
 .card.today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .card.intro .big { font-size: 2.5rem; }
-.card.intro ol { padding-left: 20px; line-height: 1.5; }
+.card.intro ol { padding-inline-start: 20px; line-height: 1.5; }
 .ai-loading { text-align: center; padding: 28px 16px; }
 .spinner { width: 40px; height: 40px; margin: 0 auto 12px; border: 4px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .seg { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; }
-.seg button { flex: none; font-size: 0.85rem; padding: 8px 12px; text-align: left; }
+.seg button { flex: none; font-size: 0.85rem; padding: 8px 12px; text-align: start; }
 .seg button small { display: block; color: var(--muted); font-size: 0.72rem; }
 .seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .seg button.on small { color: #fff; opacity: 0.85; }
-.weeks { padding-left: 20px; margin: 8px 0 0; font-size: 0.9rem; line-height: 1.45; }
+.weeks { padding-inline-start: 20px; margin: 8px 0 0; font-size: 0.9rem; line-height: 1.45; }
 .weeks li.deload { color: var(--muted); }
 .plan-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.88rem; }
-.plan-table th { text-align: left; font-size: 0.72rem; color: var(--muted); font-weight: 500; padding: 4px; }
+.plan-table th { text-align: start; font-size: 0.72rem; color: var(--muted); font-weight: 500; padding: 4px; }
 .plan-table td { padding: 8px 4px; border-top: 1px solid var(--line); vertical-align: top; }
 .plan-table td:not(:first-child) { white-space: nowrap; }
 .plan-table small { display: block; color: var(--muted); font-size: 0.78rem; margin-top: 2px; }
 .plan-table small.alt { font-style: italic; }
 .edit-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-.edit-table th { font-size: 0.7rem; color: var(--muted); font-weight: 500; text-align: left; padding: 2px; }
+.edit-table th { font-size: 0.7rem; color: var(--muted); font-weight: 500; text-align: start; padding: 2px; }
 .edit-table td { padding: 2px; }
 .edit-table td:first-child { width: 40%; }
 .edit-table input { padding: 8px 6px; font-size: 0.9rem; }
 .sticky-top { position: sticky; top: 64px; z-index: 4; }
 details.card summary { cursor: pointer; }
 .principles li, details ul li { margin-bottom: 6px; line-height: 1.4; }
-.changes { padding-left: 20px; margin: 0 0 10px; }
+.changes { padding-inline-start: 20px; margin: 0 0 10px; }
 .small-print { font-size: 0.78rem; text-align: center; }
 .bar.light { background: var(--accent-soft); margin: 8px 0 0; }
 .bar.light i { background: var(--accent); }
@@ -269,7 +270,7 @@ details.card summary { cursor: pointer; }
 .target small { display: block; color: var(--muted); font-weight: 400; margin-top: 2px; }
 .avatar { width: 34px; height: 34px; border-radius: 50%; padding: 0; overflow: hidden; position: relative; font-weight: 700; }
 .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.avatar::after { content: ''; position: absolute; right: 0; bottom: 0; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--card); background: transparent; }
+.avatar::after { content: ''; position: absolute; inset-inline-end: 0; bottom: 0; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--card); background: transparent; }
 .avatar.ok::after { background: var(--accent); }
 .avatar.saving::after { background: #f59e0b; }
 .avatar.error::after { background: var(--danger); }
@@ -282,7 +283,7 @@ p.ask { font-size: 1.05rem; line-height: 1.45; margin: 4px 0 8px; }
 /* ---------- v4: progreso de la IA y cargas sugeridas ---------- */
 .progress { height: 12px; border-radius: 6px; background: var(--accent-soft); overflow: hidden; margin: 14px 0 8px; }
 .progress i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 6px; transition: width 0.6s ease; }
-.ai-loading { text-align: left; }
+.ai-loading { text-align: start; }
 .ai-loading .phase { font-size: 0.9rem; color: var(--muted); }
 .suggest { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--accent-soft); font-size: 0.9rem; }
 .suggest small { display: block; color: var(--muted); font-size: 0.8rem; margin-top: 2px; line-height: 1.35; }
@@ -295,10 +296,10 @@ p.ask { font-size: 1.05rem; line-height: 1.45; margin: 4px 0 8px; }
 details.ctx { border: 1px dashed var(--line); border-radius: 12px; padding: 10px 12px; background: var(--bg); }
 details.ctx > summary { cursor: pointer; }
 details.ctx textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; margin-top: 8px; }
-.ctx-count { font-size: 0.78rem; text-align: right; margin-top: 2px; }
+.ctx-count { font-size: 0.78rem; text-align: end; margin-top: 2px; }
 .ctx-count.over { color: var(--danger); font-weight: 600; }
 .ctx-tools { margin-top: 10px; display: grid; gap: 8px; }
-.ctx-steps { margin: 0; padding-left: 20px; font-size: 0.85rem; line-height: 1.4; }
+.ctx-steps { margin: 0; padding-inline-start: 20px; font-size: 0.85rem; line-height: 1.4; }
 .file-btn { display: inline-block; margin-top: 4px; }
 .file-btn input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .file-btn span { display: inline-block; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); cursor: pointer; font-size: 0.9rem; }
@@ -309,8 +310,8 @@ details.ctx textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospa
 .sets input.sug { color: var(--accent); font-weight: 600; background: var(--accent-soft); border-style: dashed; }
 
 /* ---------- v6: orden y bloques alternados ---------- */
-.rrow { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: 12px; background: var(--card); margin-bottom: 8px; position: relative; }
-.rrow.grouped { border-left-color: var(--block); }
+.rrow { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-inline-start: 5px solid var(--line); border-radius: 12px; background: var(--card); margin-bottom: 8px; position: relative; }
+.rrow.grouped { border-inline-start-color: var(--block); }
 .rrow .rname { flex: 1; min-width: 0; }
 .rrow .rname b { display: block; overflow-wrap: anywhere; }
 .rrow small { display: block; color: var(--muted); font-size: 0.8rem; }
@@ -321,7 +322,7 @@ details.ctx textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospa
 .rrow.drop-above::before, .rrow.drop-below::after { content: ''; position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px; background: var(--accent); }
 .rrow.drop-above::before { top: -7px; }
 .rrow.drop-below::after { bottom: -7px; }
-.card.grouped { border-left: 5px solid var(--block); }
+.card.grouped { border-inline-start: 5px solid var(--block); }
 .blockinfo { margin-top: 6px; font-size: 0.85rem; color: var(--muted); line-height: 1.35; }
 .blockinfo b { color: var(--text); }
 .sets tr.next td { background: color-mix(in srgb, var(--block, var(--accent)) 16%, transparent); }
@@ -394,10 +395,10 @@ details.ctx textarea { margin-top: 8px; }
 .cal-day.today { box-shadow: 0 0 0 2px var(--accent); }
 .cal-day:disabled { cursor: default; }
 .finish-sum { font-size: 1.05rem; margin: 4px 0 8px; }
-.exlist { padding-left: 18px; margin: 6px 0; line-height: 1.5; }
+.exlist { padding-inline-start: 18px; margin: 6px 0; line-height: 1.5; }
 .link-hint { margin-top: 6px; font-size: 0.85rem; color: var(--muted); }
 .link-hint b { color: var(--text); }
-button.link { text-align: left; }
+button.link { text-align: start; }
 
 /* ---------- v9: reprogramar y revisar la semana ---------- */
 .cal-day.moved { border-style: dashed; border-color: var(--line); opacity: 0.75; }
@@ -425,3 +426,11 @@ button.link { text-align: left; }
 details.suggest.bodyweight { background: var(--accent-soft); }
 
 .loadsb { border-color: #f59e0b; }
+
+
+/* ---------- Idiomas de derecha a izquierda (hebreo) ---------- */
+/* Texto escrito por la persona o por la IA: cada párrafo toma la dirección de su propio idioma. */
+input:not([type="checkbox"]):not([type="radio"]), textarea, .rlist, .rname b, .sess-head b { unicode-bidi: plaintext; }
+/* Números, tiempos y cargas se leen siempre de izquierda a derecha. */
+.timer, .statline b, .cal-day b, .sets input, .ld-in input, .ctx-count, [data-ctx-count], [dir="ltr"] { direction: ltr; unicode-bidi: isolate; }
+.chart, .chart text { direction: ltr; }

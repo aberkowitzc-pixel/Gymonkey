@@ -3,6 +3,7 @@
 
 import { callAI, aiProfile, planBrief } from './plan.js';
 import { matchExercise } from './exercises.js';
+import { t, exLabel } from './i18n.js';
 
 let ctx;
 export function initLoads(c) { ctx = c; }
@@ -20,7 +21,7 @@ function close() {
 
 export function loadsLeave(next) {
   if (ld.rows.length && !ld.loading) {
-    ctx.ask('¿Salir sin guardar las cargas?', 'Salir', () => { close(); next(); });
+    ctx.ask(t('¿Salir sin guardar las cargas?'), t('Salir'), () => { close(); next(); });
     return;
   }
   close();
@@ -29,10 +30,10 @@ export function loadsLeave(next) {
 
 async function run() {
   const items = ctx.missing();
-  if (!items.length) { close(); ctx.render(); ctx.toast('Todos tus ejercicios ya tienen carga de partida'); return; }
+  if (!items.length) { close(); ctx.render(); ctx.toast(t('Todos tus ejercicios ya tienen carga de partida')); return; }
   const abort = new AbortController();
   ld.error = null;
-  ld.loading = { since: Date.now(), pct: 0, shown: 0, phase: 'Conectando con el entrenador…', abort };
+  ld.loading = { since: Date.now(), pct: 0, shown: 0, phase: t('Conectando con el entrenador…'), abort };
   ctx.render();
   const onProgress = (p) => {
     if (!ld.loading) return;
@@ -54,7 +55,7 @@ async function run() {
     ld.message = r.message || '';
     ld.asked = true;
   } catch (e) {
-    if (!abort.signal.aborted) ld.error = e.message || 'Algo salió mal.';
+    if (!abort.signal.aborted) ld.error = e.message || t('Algo salió mal.');
   } finally {
     ld.loading = null;
     ctx.render();
@@ -75,36 +76,36 @@ export function loadsTick() {
   set('ld-phase', (n) => { if (n.textContent !== l.phase) n.textContent = l.phase; });
 }
 
-const BASIS = { marca: 'tus marcas', estimado: '≈ estimada', peso_corporal: 'peso corporal' };
+const basis = (b) => ({ marca: t('tus marcas'), estimado: t('≈ estimada'), peso_corporal: t('peso corporal') }[b] || '');
 
 export function viewLoads() {
   if (ld.loading) {
     const l = ld.loading;
     return `<div class="card ai-loading" role="status">
-      <h3>Calculando tus cargas…</h3>
+      <h3>${t('Calculando tus cargas…')}</h3>
       <div class="progress" aria-hidden="true"><i id="ld-bar" style="width:${Math.round(l.shown)}%"></i></div>
       <div class="row between"><span id="ld-phase" class="phase">${esc(l.phase)}</span><b id="ld-pct" class="timer">${Math.round(l.shown)} %</b></div>
-      <div class="row between small-line muted"><span>⏱ <b id="ld-elapsed" class="timer">0:00</b></span><span>Mantén la pantalla abierta</span></div>
-      <button class="ghost block" style="margin-top:8px" data-action="ld-cancel-ai">Cancelar</button>
+      <div class="row between small-line muted"><span>⏱ <b id="ld-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
+      <button class="ghost block" style="margin-top:8px" data-action="ld-cancel-ai">${t('Cancelar')}</button>
     </div>`;
   }
   if (ld.error) {
     return `<div class="card error" role="alert"><p style="margin:0 0 8px">⚠️ ${esc(ld.error)}</p>
-      <div class="row"><button class="primary" data-action="ld-retry">Reintentar</button><button data-action="ld-close">Cerrar</button></div></div>`;
+      <div class="row"><button class="primary" data-action="ld-retry">${t('Reintentar')}</button><button data-action="ld-close">${t('Cerrar')}</button></div></div>`;
   }
   if (!ld.asked) return '';
   const rows = ld.rows.map((r, i) => `
     <div class="ld-row">
-      <div class="ld-name"><b>${esc(r.name)}</b><small>${r.sets}×${esc(r.reps)} · RIR ${esc(r.rir)}</small>${r.note ? `<small class="muted">${esc(r.note)}</small>` : ''}</div>
+      <div class="ld-name"><b>${esc(exLabel(r.name))}</b><small>${r.sets}×${esc(r.reps)} · RIR ${esc(r.rir)}</small>${r.note ? `<small class="muted">${esc(r.note)}</small>` : ''}</div>
       ${r.basis === 'peso_corporal'
-    ? '<span class="pill">peso corporal</span>'
-    : `<div class="ld-in"><input inputmode="decimal" data-ld="${i}" value="${r.kg || ''}" placeholder="kg" aria-label="Carga de ${esc(r.name)} en kg"><span class="pill">${BASIS[r.basis] || ''}</span></div>`}
+    ? `<span class="pill">${t('peso corporal')}</span>`
+    : `<div class="ld-in"><input inputmode="decimal" dir="ltr" data-ld="${i}" value="${r.kg || ''}" placeholder="${t('kg')}" aria-label="${t('Carga de {name} en kg', { name: esc(exLabel(r.name)) })}"><span class="pill">${basis(r.basis)}</span></div>`}
     </div>`).join('');
   return `
-    <div class="card"><h3>Cargas de partida</h3>${ld.message ? `<p class="muted" style="margin:6px 0 0">${esc(ld.message)}</p>` : ''}</div>
-    ${rows ? `<div class="card stack">${rows}</div>` : '<div class="empty">No se pudo estimar ninguna carga.</div>'}
-    ${rows ? '<button class="primary block" data-action="ld-apply">Guardar cargas</button>' : ''}
-    <button class="ghost block" data-action="ld-close">${rows ? 'Cancelar' : 'Cerrar'}</button>`;
+    <div class="card"><h3>${t('Cargas de partida')}</h3>${ld.message ? `<p class="muted" style="margin:6px 0 0">${esc(ld.message)}</p>` : ''}</div>
+    ${rows ? `<div class="card stack">${rows}</div>` : `<div class="empty">${t('No se pudo estimar ninguna carga.')}</div>`}
+    ${rows ? `<button class="primary block" data-action="ld-apply">${t('Guardar cargas')}</button>` : ''}
+    <button class="ghost block" data-action="ld-close">${rows ? t('Cancelar') : t('Cerrar')}</button>`;
 }
 
 export function onLoadsInput(el) {
@@ -126,7 +127,7 @@ export const loadsActions = {
     }
     close();
     ctx.commit();
-    ctx.toast(n ? `Cargas guardadas (${n})` : 'No se guardó ninguna carga');
+    ctx.toast(n ? t('Cargas guardadas ({n})', { n }) : t('No se guardó ninguna carga'));
     return false;
   },
 };

@@ -3,6 +3,7 @@
 
 import { callAI, aiProfile, trainingSummary, planBrief } from './plan.js';
 import { validateActions, describeAction, applyActions } from './weekplan.js';
+import { t, tn } from './i18n.js';
 
 let ctx;
 export function initWeek(c) { ctx = c; }
@@ -21,7 +22,7 @@ function close() {
 /** Al cambiar de pestaña con propuestas sin decidir, se pregunta antes de perderlas. */
 export function weekLeave(next) {
   if (wk.data && wk.valid.length && !wk.loading) {
-    ctx.ask('¿Salir sin aplicar las propuestas?', 'Salir', () => { close(); next(); });
+    ctx.ask(t('¿Salir sin aplicar las propuestas?'), t('Salir'), () => { close(); next(); });
     return;
   }
   close();
@@ -33,7 +34,7 @@ async function run() {
   const wctx = ctx.weekContext();
   wk.wctx = wctx;
   wk.error = null;
-  wk.loading = { since: Date.now(), pct: 0, shown: 0, phase: 'Conectando con el entrenador…', abort };
+  wk.loading = { since: Date.now(), pct: 0, shown: 0, phase: t('Conectando con el entrenador…'), abort };
   wk.lastRun = true;
   ctx.render();
   const onProgress = (p) => {
@@ -47,7 +48,7 @@ async function run() {
     const { valid, dropped } = validateActions(r.actions, wctx);
     Object.assign(wk, { data: r, valid, dropped, selected: valid.map(() => true), lastRun: null });
   } catch (e) {
-    if (!abort.signal.aborted) wk.error = e.message || 'Algo salió mal.';
+    if (!abort.signal.aborted) wk.error = e.message || t('Algo salió mal.');
   } finally {
     wk.loading = null;
     ctx.render();
@@ -68,22 +69,22 @@ export function weekTick() {
   set('wk-phase', (n) => { if (n.textContent !== l.phase) n.textContent = l.phase; });
 }
 
-const VERDICT = { sin_cambios: 'Sin cambios', reprogramar: 'Reprogramar', compensar: 'Compensar' };
+const verdict = (v) => ({ sin_cambios: t('Sin cambios'), reprogramar: t('Reprogramar'), compensar: t('Compensar') }[v] || '');
 
 export function viewWeek() {
   if (wk.loading) {
     const l = wk.loading;
     return `<div class="card ai-loading" role="status">
-      <h3>Revisando tu semana…</h3>
+      <h3>${t('Revisando tu semana…')}</h3>
       <div class="progress" aria-hidden="true"><i id="wk-bar" style="width:${Math.round(l.shown)}%"></i></div>
       <div class="row between"><span id="wk-phase" class="phase">${esc(l.phase)}</span><b id="wk-pct" class="timer">${Math.round(l.shown)} %</b></div>
-      <div class="row between small-line muted"><span>⏱ <b id="wk-elapsed" class="timer">0:00</b></span><span>Mantén la pantalla abierta</span></div>
-      <button class="ghost block" style="margin-top:8px" data-action="wk-cancel-ai">Cancelar</button>
+      <div class="row between small-line muted"><span>⏱ <b id="wk-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
+      <button class="ghost block" style="margin-top:8px" data-action="wk-cancel-ai">${t('Cancelar')}</button>
     </div>`;
   }
   if (wk.error) {
     return `<div class="card error" role="alert"><p style="margin:0 0 8px">⚠️ ${esc(wk.error)}</p>
-      <div class="row"><button class="primary" data-action="wk-retry">Reintentar</button><button data-action="wk-close">Cerrar</button></div></div>`;
+      <div class="row"><button class="primary" data-action="wk-retry">${t('Reintentar')}</button><button data-action="wk-close">${t('Cerrar')}</button></div></div>`;
   }
   const r = wk.data;
   if (!r) return '';
@@ -92,20 +93,20 @@ export function viewWeek() {
     const d = describeAction(a, wk.wctx);
     return `<div class="act">
       <label class="row"><input type="checkbox" data-wk-act="${i}" ${wk.selected[i] ? 'checked' : ''}><span>${d.icon} ${d.html}</span></label>
-      ${a.reason ? `<details class="why"><summary>¿Por qué?</summary><p class="muted" style="margin:4px 0 0">${esc(a.reason)}</p></details>` : ''}
+      ${a.reason ? `<details class="why"><summary>${t('¿Por qué?')}</summary><p class="muted" style="margin:4px 0 0">${esc(a.reason)}</p></details>` : ''}
     </div>`;
   }).join('');
   return `
     <div class="card">
-      <div class="row between"><h3>Tu semana</h3><span class="pill">${esc(VERDICT[r.verdict] || '')}</span></div>
+      <div class="row between"><h3>${t('Tu semana')}</h3><span class="pill">${esc(verdict(r.verdict))}</span></div>
       <p style="margin:8px 0 0">${esc(r.message)}</p>
     </div>
     ${acts ? `<div class="card stack">${acts}</div>` : ''}
-    ${wk.dropped ? `<p class="muted" style="font-size:0.82rem">${wk.dropped} propuesta${wk.dropped > 1 ? 's' : ''} no encajaba${wk.dropped > 1 ? 'n' : ''} con tu calendario y se descartó${wk.dropped > 1 ? 'ron' : ''}.</p>` : ''}
+    ${wk.dropped ? `<p class="muted" style="font-size:0.82rem">${tn(wk.dropped, '{n} propuesta no encajaba con tu calendario y se descartó.', '{n} propuestas no encajaban con tu calendario y se descartaron.')}</p>` : ''}
     ${wk.valid.length
-    ? `<button class="primary block" data-action="wk-apply" ${n ? '' : 'disabled'}>Aplicar ${n} cambio${n === 1 ? '' : 's'}</button>
-       <button class="ghost block" data-action="wk-close">Dejarlo como está</button>`
-    : '<button class="primary block" data-action="wk-close">Entendido</button>'}`;
+    ? `<button class="primary block" data-action="wk-apply" ${n ? '' : 'disabled'}>${tn(n, 'Aplicar {n} cambio', 'Aplicar {n} cambios')}</button>
+       <button class="ghost block" data-action="wk-close">${t('Dejarlo como está')}</button>`
+    : `<button class="primary block" data-action="wk-close">${t('Entendido')}</button>`}`;
 }
 
 export function onWeekChange(el) {
@@ -113,7 +114,7 @@ export function onWeekChange(el) {
   wk.selected[+el.dataset.wkAct] = el.checked;
   const b = document.querySelector('[data-action=wk-apply]');
   const n = wk.selected.filter(Boolean).length;
-  if (b) { b.disabled = !n; b.textContent = `Aplicar ${n} cambio${n === 1 ? '' : 's'}`; }
+  if (b) { b.disabled = !n; b.textContent = tn(n, 'Aplicar {n} cambio', 'Aplicar {n} cambios'); }
 }
 
 export const weekActions = {
@@ -130,7 +131,7 @@ export const weekActions = {
     applyActions(ctx.state(), chosen, wk.wctx, { uid: ctx.uid });
     close();
     ctx.commit();
-    ctx.toast(chosen.length ? 'Semana actualizada' : 'Sin cambios');
+    ctx.toast(chosen.length ? t('Semana actualizada') : t('Sin cambios'));
     return false;
   },
 };

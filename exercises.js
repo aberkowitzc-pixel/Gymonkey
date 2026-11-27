@@ -1,3 +1,5 @@
+import { canonicalExercise } from './i18n.js';
+
 // Reconocer que dos nombres son el mismo ejercicio ("Press banca" = "Press de banca"),
 // detectar duplicados y unirlos sin perder el historial.
 
@@ -33,7 +35,15 @@ function compatible(a, b) {
  * Busca en `exercises` el que corresponde a `name`.
  * @returns {{ exercise, how: 'exact'|'alias'|'similar' } | null}
  */
+/** Reconoce el ejercicio por su nombre; si no se parece a ninguno, prueba con su equivalente en español (nombres en inglés o hebreo). */
 export function matchExercise(name, exercises) {
+  const m = matchByName(name, exercises);
+  if (m) return m;
+  const es = canonicalExercise(name);
+  return es !== String(name || '').trim() ? matchByName(es, exercises) : null;
+}
+
+function matchByName(name, exercises) {
   const n = norm(name);
   if (!n) return null;
   for (const ex of exercises) if (norm(ex.name) === n) return { exercise: ex, how: 'exact' };

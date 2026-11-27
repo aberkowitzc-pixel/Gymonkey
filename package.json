@@ -11,6 +11,7 @@
     "jose": "^6.2.18"
   },
   "devDependencies": {
+    "acorn": "^8.19.0",
     "esbuild": "^0.25.0",
     "firebase": "^13.4.0"
   }

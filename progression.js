@@ -8,8 +8,10 @@
 //  · Semana de descarga: 90 % del peso. Tras 3 semanas sin entrenar el ejercicio: 90 %.
 // No usa IA: es una regla fija y predecible. Ajústala con tu criterio si un día vas mal de energía.
 
+import { t, fmtNum } from './i18n.js';
+
 const num = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
-const fmt = (n) => (Math.round(n * 100) / 100).toLocaleString('es');
+const fmt = (n) => fmtNum(Math.round(n * 100) / 100);
 const DAY = 864e5;
 
 export function parseRange(reps) {
@@ -50,20 +52,20 @@ export function suggestLoad({ name, reps, history = [], startLoad = 0, startBasi
   if (!last) {
     if (startLoad > 0) {
       const note = startBasis === 'marca'
-        ? `Parte de tus marcas. Ajusta si no llegas a ${lo}-${hi} reps con 2 en reserva; después la app la actualiza.`
-        : `Carga estimada para empezar. Ajústala hasta llegar a ${lo}-${hi} reps con 2 en reserva; después la app la actualiza.`;
+        ? t('Parte de tus marcas. Ajusta si no llegas a {lo}-{hi} reps con 2 en reserva; después la app la actualiza.', { lo, hi })
+        : t('Carga estimada para empezar. Ajústala hasta llegar a {lo}-{hi} reps con 2 en reserva; después la app la actualiza.', { lo, hi });
       return { weight: roundLoad(startLoad), kind: 'start', basis: startBasis || 'estimado', lo, hi, lastReps: [], note };
     }
     // Ejercicio con el propio peso corporal: no lleva kilos, se progresa en repeticiones.
     if (startBasis === 'peso_corporal') {
-      return { weight: null, kind: 'bodyweight', lo, hi, lastReps: [], note: `Con tu propio peso: apunta a ${lo}-${hi} repeticiones con 2 en reserva. Al llegar a ${hi} en todas las series, añade lastre o una variante más difícil.` };
+      return { weight: null, kind: 'bodyweight', lo, hi, lastReps: [], note: t('Con tu propio peso: apunta a {lo}-{hi} repeticiones con 2 en reserva. Al llegar a {hi} en todas las series, añade lastre o una variante más difícil.', { lo, hi }) };
     }
-    return { weight: null, kind: 'calibrate', lo, hi, lastReps: [], note: `Primera vez: elige un peso con el que completes ${lo}-${hi} reps dejando 2-3 en reserva. Desde la próxima sesión la app te propone la carga.` };
+    return { weight: null, kind: 'calibrate', lo, hi, lastReps: [], note: t('Primera vez: elige un peso con el que completes {lo}-{hi} reps dejando 2-3 en reserva. Desde la próxima sesión la app te propone la carga.', { lo, hi }) };
   }
 
   const sets = last.sets.filter((s) => num(s.r) > 0);
   const maxW = Math.max(...sets.map((s) => num(s.w)));
-  const lastText = sets.map((s) => (num(s.w) ? `${fmt(num(s.w))}×${num(s.r)}` : `${num(s.r)} reps`)).join(', ');
+  const lastText = sets.map((s) => (num(s.w) ? `${fmt(num(s.w))}×${num(s.r)}` : t('{n} reps', { n: num(s.r) }))).join(', ');
   const lastReps = sets.map((s) => num(s.r));
 
   // Ejercicio con el propio peso corporal.
@@ -72,8 +74,8 @@ export function suggestLoad({ name, reps, history = [], startLoad = 0, startBasi
     return {
       weight: null, kind: allTop ? 'up' : 'hold', lastText, lo, hi, lastReps,
       note: allTop
-        ? `Llegaste a ${hi} reps en todas las series: añade lastre (2,5-5 kg) o pasa a una variante más difícil.`
-        : `Intenta sumar 1 repetición por serie (objetivo ${lo}-${hi}).`,
+        ? t('Llegaste a {hi} reps en todas las series: añade lastre (2,5-5 kg) o pasa a una variante más difícil.', { hi })
+        : t('Intenta sumar 1 repetición por serie (objetivo {lo}-{hi}).', { lo, hi }),
     };
   }
 
@@ -86,30 +88,30 @@ export function suggestLoad({ name, reps, history = [], startLoad = 0, startBasi
   let weight = maxW, kind, note;
   if (reached.every((r) => r >= hi)) {
     weight = maxW + step; kind = 'up';
-    note = `Completaste ${hi}+ reps en todas las series con ${fmt(maxW)} kg → sube ${fmt(step)} kg.`;
+    note = t('Completaste {hi}+ reps en todas las series con {kg} kg → sube {step} kg.', { hi, kg: fmt(maxW), step: fmt(step) });
   } else if (minR >= lo) {
     kind = 'hold';
-    note = `Mantén ${fmt(maxW)} kg e intenta sumar 1 repetición por serie (hasta ${hi}).`;
+    note = t('Mantén {kg} kg e intenta sumar 1 repetición por serie (hasta {hi}).', { kg: fmt(maxW), hi });
   } else if (minR >= lo - 1) {
     kind = 'hold';
-    note = `Casi: repite ${fmt(maxW)} kg y busca llegar a ${lo}+ reps en todas las series.`;
+    note = t('Casi: repite {kg} kg y busca llegar a {lo}+ reps en todas las series.', { kg: fmt(maxW), lo });
   } else {
     weight = maxW * 0.95; kind = 'down';
-    note = `No llegaste a ${lo} reps con ${fmt(maxW)} kg → baja un 5 % para trabajar dentro del rango.`;
+    note = t('No llegaste a {lo} reps con {kg} kg → baja un 5 % para trabajar dentro del rango.', { lo, kg: fmt(maxW) });
   }
 
   // Si la última vez quedó incompleto (menos series de las previstas), no se sube el peso: se repite y se completa.
   if (kind === 'up' && last.incomplete) {
     weight = maxW; kind = 'hold';
-    note = `La última vez no terminaste todas las series: repite ${fmt(maxW)} kg y completa el rango.`;
+    note = t('La última vez no terminaste todas las series: repite {kg} kg y completa el rango.', { kg: fmt(maxW) });
   }
 
   if (deload) {
     weight = maxW * 0.9; kind = 'deload';
-    note = `Semana de descarga: ${fmt(roundLoad(weight))} kg (≈ 90 %) y la mitad de series para recuperarte.`;
+    note = t('Semana de descarga: {kg} kg (≈ 90 %) y la mitad de series para recuperarte.', { kg: fmt(roundLoad(weight)) });
   } else if (gapDays > 21 && kind !== 'down') {
     weight = maxW * 0.9; kind = 'break';
-    note = `Llevas ${Math.round(gapDays / 7)} semanas sin hacer este ejercicio: vuelve con ≈ 90 % del peso y sube de nuevo.`;
+    note = t('Llevas {n} semanas sin hacer este ejercicio: vuelve con ≈ 90 % del peso y sube de nuevo.', { n: Math.round(gapDays / 7) });
   }
 
   return { weight: roundLoad(weight), kind, note, lastText, lo, hi, lastReps };

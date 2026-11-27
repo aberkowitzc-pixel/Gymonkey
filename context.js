@@ -4,6 +4,8 @@
 //  · buildExport(): tus datos de Gymonkey en Markdown, para llevarlos a otra IA.
 //  · MAX_DOC: límite de tamaño del documento que se envía al entrenador.
 
+import { t } from './i18n.js';
+
 export const MAX_DOC = 40000;
 
 export const PROMPT_OTRA_IA = `Quiero llevar mi información de entrenamiento a otra aplicación (un entrenador con IA) para que continúe mi programa sin empezar de cero. Necesito que, a partir de TODO lo que sabes de mí, prepares un resumen en Markdown con la estructura que te indico abajo.
@@ -79,65 +81,143 @@ Si dos ejercicios se hicieron alternando serie a serie, indícalo (por ejemplo, 
 - Datos que faltan, ambiguos o contradictorios:
 `;
 
+const PROMPT_EN = `I want to move my training information to another app (an AI coach) so it can continue my program without starting from scratch. Using EVERYTHING you know about me, prepare a Markdown summary with the structure below.
+
+Use every source you have: this conversation, your memory and any previous conversations you can access, and any file or image I have shared with you. The more useful context you include, the better.
+
+Rules:
+- Deliver everything inside ONE single Markdown code block (start with \`\`\`markdown and end with \`\`\`) so I can copy it in one go. Write nothing before or after the block.
+- Don't ask me questions now: use what you have. If you don't know something, write "Not stated". Don't invent figures, don't round and don't fill in with typical values.
+- If a data point changed over time, order it chronologically and add dates or weeks. If data conflicts, keep the most recent and note the conflict under "Notes".
+- Only extract and organize. Don't add advice, judgments or changes to the plan.
+- Prioritize the last 8-12 weeks in detail and summarize what came before. Be complete but concise.
+- Omit data that identifies me (name, email, phone, location). Age, sex and body weight are useful: include them if known.
+- Weights in kg.
+
+Document structure:
+
+# Training context
+
+## Profile
+- Main goal (and deadlines or events, if any):
+- Approximate age, sex and body weight (trend if you know it):
+- Time lifting weights and level:
+- Days I train per week (and which) and length of each session:
+- Available equipment and gym:
+- Injuries, aches or limitations (with their history):
+
+## Training history
+- Previous plans or methods and how long they lasted:
+- What worked well and what didn't, and why:
+
+## Current plan
+- Type of plan (for example upper/lower, push/pull/legs, full body) and since when:
+- Total length and the week I'm in now:
+- Current phase or block (accumulation, strength, deload…):
+
+### Day 1 — name (weekday)
+| Exercise | Sets × reps | Current weight (kg) | RIR/RPE | Rest | Notes |
+|---|---|---|---|---|---|
+
+(Repeat "### Day N" for each training day.)
+
+## Previous sessions
+The specific sessions you remember, from oldest to newest, with their date (YYYY-MM-DD) and the actual sets (weight × reps). For example:
+
+### 2026-11-20 — Upper A (60 min)
+- Bench press: 60×8, 60×8, 60×7
+- Barbell row: 50×10, 50×10, 50×9
+- Plank: 45 s, 40 s, 40 s
+
+If two exercises were done alternating set by set, say so (for example, "[alternated with Barbell row]"). If you don't know the exact date, write the approximate one and mark it "(approx.)". Don't invent sessions, sets or dates.
+
+## Progression and records
+- For each main exercise, the evolution of weight × reps with dates or weeks, from oldest to newest (and estimated 1RMs if you calculated them):
+
+## How it's going
+- Where I'm progressing well:
+- Stalled exercises:
+- Adherence (sessions I usually complete) and recent routine changes:
+- Fatigue, sleep, stress and current aches:
+- Diet and body weight, only if we have discussed it (data, not advice):
+
+## Preferences
+- Exercises I like or want to keep:
+- Exercises I dislike or want to avoid:
+- Cardio, sports or other activities I do:
+
+## What I want to change
+- Changes I have asked for or pending decisions:
+
+## Notes
+- Where the data comes from (this conversation, memory, files) and how complete it is:
+- Missing, ambiguous or conflicting data:
+`;
+
+const PROMPT_HE_NOTE = '\n\nWrite the content of the document in Hebrew (keep the section headings exactly as above, in English).\n';
+
+/** Prompt para otra IA, en el idioma de la app (hebreo: estructura en inglés y contenido en hebreo). */
+export const promptOtraIA = (lang = 'es') => (lang === 'en' ? PROMPT_EN : lang === 'he' ? PROMPT_EN + PROMPT_HE_NOTE : PROMPT_OTRA_IA);
+
 const day = (ts) => new Date(ts).toISOString().slice(0, 10);
-const list = (v) => (Array.isArray(v) ? v.filter(Boolean).join(', ') : v) || 'No consta';
+const list = (v) => (Array.isArray(v) ? v.filter(Boolean).join(', ') : v) || t('No consta');
 
 /**
  * Tus datos de Gymonkey en Markdown.
  * @param {object} d { profile, plan, week, workouts, routines, exName, fmtSet, fmtMin, now }
  */
 export function buildExport({ profile = null, plan = null, week = null, workouts = [], routines = [], exName, fmtSet, now = Date.now(), limit = 8 }) {
-  const out = [`# Mis datos de entrenamiento (exportado de Gymonkey el ${day(now)})`, ''];
+  const out = [t('# Mis datos de entrenamiento (exportado de Gymonkey el {date})', { date: day(now) }), ''];
 
-  out.push('## Perfil');
+  out.push(t('## Perfil'));
   if (profile) {
-    out.push(`- Objetivo: ${profile.goal || 'No consta'}`);
-    out.push(`- Experiencia: ${profile.experience || 'No consta'}`);
-    out.push(`- Días disponibles: ${list(profile.days)}`);
-    out.push(`- Minutos por sesión: ${profile.minutes || 'No consta'}`);
-    out.push(`- Material: ${list(profile.equipment)}`);
-    out.push(`- Lesiones o limitaciones: ${profile.injuries || 'No consta'}`);
-    if (profile.priorities) out.push(`- Prioridades: ${profile.priorities}`);
-    if (profile.preferences) out.push(`- Preferencias: ${profile.preferences}`);
+    out.push(`${t('- Objetivo:')} ${profile.goal || t('No consta')}`);
+    out.push(`${t('- Experiencia:')} ${profile.experience || t('No consta')}`);
+    out.push(`${t('- Días disponibles:')} ${list(profile.days)}`);
+    out.push(`${t('- Minutos por sesión:')} ${profile.minutes || t('No consta')}`);
+    out.push(`${t('- Material:')} ${list(profile.equipment)}`);
+    out.push(`${t('- Lesiones o limitaciones:')} ${profile.injuries || t('No consta')}`);
+    if (profile.priorities) out.push(`${t('- Prioridades:')} ${profile.priorities}`);
+    if (profile.preferences) out.push(`${t('- Preferencias:')} ${profile.preferences}`);
   } else {
-    out.push('- No consta');
+    out.push(`- ${t('No consta')}`);
   }
   out.push('');
 
-  out.push('## Plan actual');
+  out.push(t('## Plan actual'));
   if (plan) {
-    out.push(`**${plan.title}** — ${plan.split} · ${plan.days_per_week} días/semana · ${plan.session_minutes} min · ${plan.total_weeks} semanas`);
+    out.push(`**${plan.title}** — ${plan.split} · ${t('{d} días/semana · {m} min · {w} semanas', { d: plan.days_per_week, m: plan.session_minutes, w: plan.total_weeks })}`);
     if (week) {
       const m = plan.mesocycles[week.meso];
-      out.push(`- Voy en la semana ${week.week} de ${plan.total_weeks}${m ? `, mesociclo "${m.name}" (semana ${week.weekInMeso} de ${m.weeks})` : ''}${week.wp?.deload ? ' — semana de descarga' : ''}`);
-      if (week.wp?.guidance) out.push(`- Guía de esta semana: ${week.wp.guidance}`);
+      out.push(`- ${t('Voy en la semana {w} de {total}', { w: week.week, total: plan.total_weeks })}${m ? t(', mesociclo "{name}" (semana {n} de {of})', { name: m.name, n: week.weekInMeso, of: m.weeks }) : ''}${week.wp?.deload ? t(' — semana de descarga') : ''}`);
+      if (week.wp?.guidance) out.push(`${t('- Guía de esta semana:')} ${week.wp.guidance}`);
     }
-    out.push(`- Días: ${list(plan.schedule)}`);
-    out.push(`- Mesociclos: ${plan.mesocycles.map((m) => `${m.name} (${m.weeks} sem, ${m.focus})`).join(' → ')}`);
+    out.push(`${t('- Días:')} ${list(plan.schedule)}`);
+    out.push(`${t('- Mesociclos:')} ${plan.mesocycles.map((m) => `${m.name} (${t('{n} sem', { n: m.weeks })}, ${m.focus})`).join(' → ')}`);
     out.push('');
     const meso = plan.mesocycles[week?.meso ?? 0];
     if (meso) {
-      out.push(`### Mesociclo actual: ${meso.name}`);
+      out.push(t('### Mesociclo actual: {name}', { name: meso.name }));
       for (const d of meso.days) {
-        out.push('', `#### ${d.weekday} — ${d.name} (${d.focus})`, '| Ejercicio | Series × reps | RIR | Descanso |', '|---|---|---|---|');
+        out.push('', `#### ${d.weekday} — ${d.name} (${d.focus})`, t('| Ejercicio | Series × reps | RIR | Descanso |'), '|---|---|---|---|');
         for (const x of d.exercises) out.push(`| ${x.name} | ${x.sets}×${x.reps}${x.type === 'time' ? ' s' : ''} | ${x.rir} | ${x.rest_seconds} s |`);
       }
     }
   } else if (routines.length) {
-    out.push('Sin plan con IA. Mis rutinas:');
-    for (const r of routines) out.push(`- ${r.name}: ${r.exerciseIds.map(exName).join(', ') || 'sin ejercicios'}`);
+    out.push(t('Sin plan con IA. Mis rutinas:'));
+    for (const r of routines) out.push(`- ${r.name}: ${r.exerciseIds.map(exName).join(', ') || t('sin ejercicios')}`);
   } else {
-    out.push('- No consta');
+    out.push(`- ${t('No consta')}`);
   }
   out.push('');
 
-  out.push(`## Entrenos recientes (últimos ${limit})`);
+  out.push(t('## Entrenos recientes (últimos {n})', { n: limit }));
   const recent = workouts.slice(-limit).reverse();
-  if (!recent.length) out.push('- Aún no hay entrenos registrados.');
+  if (!recent.length) out.push(t('- Aún no hay entrenos registrados.'));
   for (const w of recent) {
-    out.push('', `### ${day(w.start)} — ${w.name} (${Math.max(1, Math.round((w.end - w.start) / 60000))} min)${w.partial ? ' · sesión parcial' : ''}`);
+    out.push('', `### ${day(w.start)} — ${w.name} (${Math.max(1, Math.round((w.end - w.start) / 60000))} min)${w.partial ? t(' · sesión parcial') : ''}`);
     for (const e of w.entries) out.push(`- ${exName(e.exerciseId)}: ${e.sets.map((s) => fmtSet(e.exerciseId, s)).join(', ') || '—'}`);
-    if (w.skipped?.length) out.push(`- Sin hacer: ${w.skipped.map(exName).join(', ')}`);
+    if (w.skipped?.length) out.push(`${t('- Sin hacer:')} ${w.skipped.map(exName).join(', ')}`);
   }
   out.push('');
   return out.join('\n');

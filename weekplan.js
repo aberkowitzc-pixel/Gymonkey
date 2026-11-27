@@ -4,6 +4,7 @@
 
 import { isoLocal, mondayOf, originalDate } from './calendar.js';
 import { norm } from './exercises.js';
+import { t, tn, dayShort } from './i18n.js';
 
 const DAY = 864e5;
 const parseISO = (iso) => new Date(`${iso}T12:00:00`);
@@ -135,14 +136,17 @@ export function validateActions(actions, ctx) {
 }
 
 /** Texto corto de una acción, para mostrarla. */
+const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 export function describeAction(a, ctx) {
-  const day = (iso) => { const d = ctx.days.find((x) => x.date === iso) || ctx.next_week.find((x) => x.date === iso); return d ? `${d.weekday.slice(0, 3).toLowerCase()} ${Number(iso.slice(8))}` : iso; };
+  const day = (iso) => { const d = ctx.days.find((x) => x.date === iso) || ctx.next_week.find((x) => x.date === iso); return d ? `${dayShort(d.weekday)} ${Number(iso.slice(8))}` : iso; };
+  const p = { s: escHtml(a.session), e: escHtml(a.exercise), a: day(a.from_date), b: day(a.to_date) };
   switch (a.kind) {
-    case 'move_session': return { icon: '📅', html: `Mover <b>${a.session}</b> del ${day(a.from_date)} al ${day(a.to_date)}` };
-    case 'skip_session': return { icon: '⏭', html: `Saltar <b>${a.session}</b> (${day(a.from_date)})` };
-    case 'add_sets': return { icon: '＋', html: `+${a.sets} serie${a.sets > 1 ? 's' : ''} de <b>${a.exercise}</b> en ${a.session} (${day(a.to_date)})` };
-    case 'add_exercise': return { icon: '＋', html: `Añadir <b>${a.exercise}</b> ${a.sets}×${a.reps} a ${a.session} (${day(a.to_date)})` };
-    default: return { icon: '•', html: a.kind };
+    case 'move_session': return { icon: '📅', html: t('Mover <b>{s}</b> del {a} al {b}', p) };
+    case 'skip_session': return { icon: '⏭', html: t('Saltar <b>{s}</b> ({a})', p) };
+    case 'add_sets': return { icon: '＋', html: tn(a.sets, '+{n} serie de <b>{e}</b> en {s} ({b})', '+{n} series de <b>{e}</b> en {s} ({b})', p) };
+    case 'add_exercise': return { icon: '＋', html: t('Añadir <b>{e}</b> {sets}×{reps} a {s} ({b})', { ...p, sets: a.sets, reps: escHtml(a.reps) }) };
+    default: return { icon: '•', html: escHtml(a.kind) };
   }
 }
 

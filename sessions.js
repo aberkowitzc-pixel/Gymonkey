@@ -5,6 +5,7 @@ import { callAI } from './plan.js';
 import { MAX_DOC } from './context.js';
 import { matchExercise, addAlias, norm } from './exercises.js';
 import { guessRoutine } from './calendar.js';
+import { t, tn, fmtNum, getLang, exLabel, canonicalExercise } from './i18n.js';
 
 let ctx;
 export function initSessions(c) { ctx = c; }
@@ -42,7 +43,7 @@ function close() {
 /** Al cambiar de pestaña: si hay un borrador sin guardar, se pregunta antes de perderlo. */
 export function sessionsLeave(next) {
   if (sv.step === 'review' && sv.draft && !sv.loading) {
-    ctx.ask(sv.target === 'edit' ? '¿Salir sin guardar los cambios?' : '¿Salir sin guardar? Se perderá lo que acabas de ordenar.', 'Salir', () => { close(); next(); });
+    ctx.ask(sv.target === 'edit' ? t('¿Salir sin guardar los cambios?') : t('¿Salir sin guardar? Se perderá lo que acabas de ordenar.'), t('Salir'), () => { close(); next(); });
     return;
   }
   close();
@@ -56,7 +57,7 @@ let rec = null;
 
 function micUI() {
   const b = document.getElementById('sv-mic');
-  if (b) b.textContent = sv.listening ? '⏹ Parar' : '🎙️ Dictar';
+  if (b) b.textContent = sv.listening ? `⏹ ${t('Parar')}` : `🎙️ ${t('Dictar')}`;
   const st = document.getElementById('sv-status');
   if (st && !sv.listening) st.textContent = '';
 }
@@ -69,11 +70,12 @@ function stopMic() {
 }
 
 function startMic() {
-  if (!SR) { ctx.toast('Tu navegador no ofrece dictado aquí: usa el micrófono de tu teclado'); return; }
+  if (!SR) { ctx.toast(t('Tu navegador no ofrece dictado aquí: usa el micrófono de tu teclado')); return; }
   const box = document.getElementById('sv-text');
   if (!box) return;
   rec = new SR();
-  rec.lang = /^es/i.test(navigator.language || '') ? navigator.language : 'es-ES';
+  const own = { es: 'es', en: 'en', he: 'he' }[getLang()];
+  rec.lang = new RegExp(`^${own}`, 'i').test(navigator.language || '') ? navigator.language : { es: 'es-ES', en: 'en-US', he: 'he-IL' }[getLang()];
   rec.interimResults = true;
   // Una frase por reconocimiento y se vuelve a arrancar al terminar: evita las repeticiones de palabras del modo continuo en Android.
   rec.continuous = false;
@@ -89,12 +91,12 @@ function startMic() {
       countUI(box);
     }
     const st = document.getElementById('sv-status');
-    if (st) st.textContent = interim ? `… ${interim}` : 'Escuchando…';
+    if (st) st.textContent = interim ? `… ${interim}` : t('Escuchando…');
   };
   rec.onerror = (ev) => {
-    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { ctx.toast('Permiso de micrófono denegado: actívalo en los ajustes del navegador'); stopMic(); }
-    else if (ev.error === 'audio-capture') { ctx.toast('No se encuentra el micrófono'); stopMic(); }
-    else if (ev.error === 'network') { ctx.toast('Sin conexión para transcribir el dictado'); stopMic(); }
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { ctx.toast(t('Permiso de micrófono denegado: actívalo en los ajustes del navegador')); stopMic(); }
+    else if (ev.error === 'audio-capture') { ctx.toast(t('No se encuentra el micrófono')); stopMic(); }
+    else if (ev.error === 'network') { ctx.toast(t('Sin conexión para transcribir el dictado')); stopMic(); }
     // "no-speech" y "aborted" son normales: se reintenta al terminar.
   };
   rec.onend = () => {
@@ -104,7 +106,7 @@ function startMic() {
   try { rec.start(); } catch { stopMic(); return; }
   micUI();
   const st = document.getElementById('sv-status');
-  if (st) st.textContent = 'Escuchando…';
+  if (st) st.textContent = t('Escuchando…');
 }
 
 /* ---------- llamadas a la IA ---------- */
@@ -113,7 +115,7 @@ async function run(text, fn) {
   stopMic();
   const abort = new AbortController();
   sv.lastRun = { text, fn };
-  sv.loading = { text, since: Date.now(), pct: 0, shown: 0, phase: 'Conectando con el asistente…', abort };
+  sv.loading = { text, since: Date.now(), pct: 0, shown: 0, phase: t('Conectando con el asistente…'), abort };
   sv.error = null;
   ctx.render();
   const onProgress = (p) => {
@@ -126,7 +128,7 @@ async function run(text, fn) {
     await fn({ signal: abort.signal, onProgress });
     sv.lastRun = null;
   } catch (e) {
-    if (!abort.signal.aborted) sv.error = e.message || 'Algo salió mal.';
+    if (!abort.signal.aborted) sv.error = e.message || t('Algo salió mal.');
   } finally {
     sv.loading = null;
     ctx.render();
@@ -160,11 +162,11 @@ export function sessionsTick() {
 /* ---------- duplicados ---------- */
 
 const sigOf = (date, entries) => `${date}|${entries.map(({ name, sets }) => `${norm(name)}:${sets.map(([w, r]) => `${w}x${r}`).join(',')}`).join(';')}`;
-const draftSig = (s) => sigOf(s.date, s.entries.map((e) => ({ name: resolveExercise(e).ex?.name || e.exercise, sets: e.sets.map((t) => [num(t.weight_kg), num(t.reps)]) })));
+const draftSig = (s) => sigOf(s.date, s.entries.map((e) => ({ name: resolveExercise(e).ex?.name || e.exercise, sets: e.sets.map((u) => [num(u.weight_kg), num(u.reps)]) })));
 function existingSigs() {
   const st = S();
   const name = (id) => st.exercises.find((e) => e.id === id)?.name || '';
-  return new Set(st.workouts.map((w) => sigOf(isoLocal(w.start), w.entries.map((e) => ({ name: name(e.exerciseId), sets: e.sets.filter((t) => t.done).map((t) => [num(t.w), num(t.r)]) })))));
+  return new Set(st.workouts.map((w) => sigOf(isoLocal(w.start), w.entries.map((e) => ({ name: name(e.exerciseId), sets: e.sets.filter((u) => u.done).map((u) => [num(u.w), num(u.r)]) })))));
 }
 const isDup = (s) => !!s.date && existingSigs().has(draftSig(s));
 
@@ -173,7 +175,7 @@ const isDup = (s) => !!s.date && existingSigs().has(draftSig(s));
 export function viewSessions() {
   if (sv.loading) return loadingView();
   const err = sv.error
-    ? `<div class="card error" role="alert"><p style="margin:0 0 8px">⚠️ ${esc(sv.error)}</p>${sv.lastRun ? '<button class="primary" data-action="sv-retry">Reintentar</button>' : ''}</div>`
+    ? `<div class="card error" role="alert"><p style="margin:0 0 8px">⚠️ ${esc(sv.error)}</p>${sv.lastRun ? `<button class="primary" data-action="sv-retry">${t('Reintentar')}</button>` : ''}</div>`
     : '';
   return err + (sv.step === 'review' ? reviewView() : inputView());
 }
@@ -184,39 +186,39 @@ function loadingView() {
     <h3>${esc(l.text)}</h3>
     <div class="progress" aria-hidden="true"><i id="sv-bar" style="width:${Math.round(l.shown)}%"></i></div>
     <div class="row between"><span id="sv-phase" class="phase">${esc(l.phase)}</span><b id="sv-pct" class="timer">${Math.round(l.shown)} %</b></div>
-    <div class="row between small-line muted"><span>⏱ <b id="sv-elapsed" class="timer">0:00</b></span><span>Mantén la pantalla abierta</span></div>
-    <button class="ghost block" style="margin-top:8px" data-action="sv-cancel-ai">Cancelar</button>
+    <div class="row between small-line muted"><span>⏱ <b id="sv-elapsed" class="timer">0:00</b></span><span>${t('Mantén la pantalla abierta')}</span></div>
+    <button class="ghost block" style="margin-top:8px" data-action="sv-cancel-ai">${t('Cancelar')}</button>
   </div>`;
 }
 
 function inputView() {
   const imp = sv.kind === 'import';
-  const title = imp ? 'Importar historial' : sv.target === 'active' ? 'Dictar series' : 'Registrar un entreno';
+  const title = imp ? t('Importar historial') : sv.target === 'active' ? t('Dictar series') : t('Registrar un entreno');
   const desc = imp
-    ? 'Pega o sube tu historial con fechas.'
+    ? t('Pega o sube tu historial con fechas.')
     : sv.target === 'active'
-      ? 'Cuéntame lo que llevas hecho.'
-      : 'Cuéntame qué hiciste: ejercicios, pesos y series.';
+      ? t('Cuéntame lo que llevas hecho.')
+      : t('Cuéntame qué hiciste: ejercicios, pesos y series.');
   const tools = imp
     ? `<div class="row wrap">
-        <label class="file-btn"><input type="file" data-sv-file accept=".md,.markdown,.txt,.csv,.json,text/*"><span>📄 Subir archivo</span></label>
-        <button type="button" class="small" data-action="ctx-copy-prompt">📋 Copiar prompt para otra IA</button>
+        <label class="file-btn"><input type="file" data-sv-file accept=".md,.markdown,.txt,.csv,.json,text/*"><span>📄 ${t('Subir archivo')}</span></label>
+        <button type="button" class="small" data-action="ctx-copy-prompt">📋 ${t('Copiar prompt para otra IA')}</button>
       </div>`
-    : `<div class="row"><button class="primary" id="sv-mic" data-action="sv-mic">${sv.listening ? '⏹ Parar' : '🎙️ Dictar'}</button><span class="muted" id="sv-status"></span></div>
-       <p class="muted" style="margin:0;font-size:0.78rem">${SR ? 'Chrome envía el audio a Google para transcribirlo.' : 'Usa el micrófono de tu teclado.'}</p>`;
+    : `<div class="row"><button class="primary" id="sv-mic" data-action="sv-mic">${sv.listening ? `⏹ ${t('Parar')}` : `🎙️ ${t('Dictar')}`}</button><span class="muted" id="sv-status"></span></div>
+       <p class="muted" style="margin:0;font-size:0.78rem">${SR ? t('Chrome envía el audio a Google para transcribirlo.') : t('Usa el micrófono de tu teclado.')}</p>`;
   return `
     <div class="card stack">
       <h2 style="margin:0">${title}</h2>
       <p class="muted" style="margin:0">${desc}</p>
       ${tools}
-      <textarea id="sv-text" data-svtext rows="${imp ? 10 : 8}" placeholder="${imp ? 'Pega aquí tu historial…' : 'Ej.: hoy sentadilla 4×6 con 80, alternando con landmine 3×10 con 25…'}">${esc(sv.text)}</textarea>
-      <div class="ctx-count muted" data-sv-count>${sv.text.length.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')}</div>
-      <button class="primary block" data-action="sv-parse">${imp ? 'Leer y ordenar' : 'Ordenar mi sesión'}</button>
-      <button class="ghost block" data-action="sv-cancel">Cancelar</button>
+      <textarea id="sv-text" data-svtext rows="${imp ? 10 : 8}" placeholder="${imp ? t('Pega aquí tu historial…') : t('Ej.: hoy sentadilla 4×6 con 80, alternando con landmine 3×10 con 25…')}">${esc(sv.text)}</textarea>
+      <div class="ctx-count muted" data-sv-count dir="ltr">${fmtNum(sv.text.length)} / ${fmtNum(MAX_DOC)}</div>
+      <button class="primary block" data-action="sv-parse">${imp ? t('Leer y ordenar') : t('Ordenar mi sesión')}</button>
+      <button class="ghost block" data-action="sv-cancel">${t('Cancelar')}</button>
     </div>`;
 }
 
-const incompleteOf = (s) => s.entries.reduce((t, e) => t + e.sets.filter((x) => !x.complete).length, 0);
+const incompleteOf = (s) => s.entries.reduce((n, e) => n + e.sets.filter((x) => !x.complete).length, 0);
 
 function reviewView() {
   const d = sv.draft;
@@ -224,56 +226,56 @@ function reviewView() {
   const sessions = d.sessions.map((s, i) => {
     const dup = isDup(s);
     const inc = incompleteOf(s);
-    const sets = s.entries.reduce((t, e) => t + e.sets.length, 0);
+    const sets = s.entries.reduce((n, e) => n + e.sets.length, 0);
     return `
       <details class="card sess" ${many ? '' : 'open'}>
         <summary>
           <label class="sess-head">${sv.target === 'edit' ? '' : `<input type="checkbox" data-sv-inc="${i}" ${sv.include[i] ? 'checked' : ''}>`}
-            <span><b>${esc(s.date || 'Sin fecha')}</b> · ${esc(s.name || 'Entreno')}<br><small class="muted">${s.entries.length} ejercicios · ${sets} series</small></span></label>
-          ${dup ? '<span class="pill">ya en tu historial</span>' : ''}${inc ? `<span class="pill warn">⚠️ ${inc}</span>` : ''}
+            <span><b>${esc(s.date || t('Sin fecha'))}</b> · ${esc(s.name || t('Entreno'))}<br><small class="muted">${tn(s.entries.length, '{n} ejercicio', '{n} ejercicios')} · ${tn(sets, '{n} serie', '{n} series')}</small></span></label>
+          ${dup ? `<span class="pill">${t('ya en tu historial')}</span>` : ''}${inc ? `<span class="pill warn">⚠️ ${inc}</span>` : ''}
         </summary>
         <div class="grid2" style="margin-top:8px">
-          <label class="field">Fecha<input type="date" data-sv="s.${i}.date" value="${esc(validISO(s.date) ? s.date : '')}"></label>
-          <label class="field">Nombre<input data-sv="s.${i}.name" value="${esc(s.name)}"></label>
+          <label class="field">${t('Fecha')}<input type="date" data-sv="s.${i}.date" value="${esc(validISO(s.date) ? s.date : '')}"></label>
+          <label class="field">${t('Nombre')}<input data-sv="s.${i}.name" value="${esc(s.name)}"></label>
         </div>
         ${s.entries.map((e, j) => `
           <div class="svent">
-            <div class="row between"><button class="ghost link" data-action="sv-link" data-i="${i}" data-j="${j}" aria-label="Cambiar el ejercicio vinculado"><b>${esc(e.exercise)}</b>${linkPill(e)}</button><span class="row">${e.block ? `<span class="pill">🔗 ${esc(e.block)}</span>` : ''}<button class="ghost danger small" data-action="sv-del-entry" data-i="${i}" data-j="${j}" aria-label="Quitar ejercicio">✕</button></span></div>
-            <table class="sets"><thead><tr><th>#</th><th>Kg</th><th>${e.type === 'time' ? 'Seg' : 'Reps'}</th><th></th></tr></thead><tbody>
-              ${e.sets.map((t, k) => `
-                <tr class="${t.complete ? '' : 'warn'}">
+            <div class="row between"><button class="ghost link" data-action="sv-link" data-i="${i}" data-j="${j}" aria-label="${t('Cambiar el ejercicio vinculado')}"><b>${esc(exLabel(e.exercise))}</b>${linkPill(e)}</button><span class="row">${e.block ? `<span class="pill">🔗 ${esc(e.block)}</span>` : ''}<button class="ghost danger small" data-action="sv-del-entry" data-i="${i}" data-j="${j}" aria-label="${t('Quitar ejercicio')}">✕</button></span></div>
+            <table class="sets"><thead><tr><th>#</th><th>${t('Kg')}</th><th>${e.type === 'time' ? t('Seg') : t('Reps')}</th><th></th></tr></thead><tbody>
+              ${e.sets.map((u, k) => `
+                <tr class="${u.complete ? '' : 'warn'}">
                   <td>${k + 1}</td>
-                  <td><input inputmode="decimal" data-sv="t.${i}.${j}.${k}.weight_kg" value="${t.weight_kg ? esc(t.weight_kg) : ''}" placeholder="${e.type === 'time' ? '' : 'kg'}" aria-label="Peso serie ${k + 1}"></td>
-                  <td><input inputmode="numeric" data-sv="t.${i}.${j}.${k}.reps" value="${t.reps ? esc(t.reps) : ''}" placeholder="${e.type === 'time' ? 'seg' : 'reps'}" aria-label="${e.type === 'time' ? 'Segundos' : 'Repeticiones'} serie ${k + 1}"></td>
-                  <td>${t.complete ? '' : '⚠️'}<button class="ghost danger small" data-action="sv-del-set" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Quitar serie">✕</button></td>
+                  <td><input inputmode="decimal" dir="ltr" data-sv="t.${i}.${j}.${k}.weight_kg" value="${u.weight_kg ? esc(u.weight_kg) : ''}" placeholder="${e.type === 'time' ? '' : t('kg')}" aria-label="${t('Peso serie {n}', { n: k + 1 })}"></td>
+                  <td><input inputmode="numeric" dir="ltr" data-sv="t.${i}.${j}.${k}.reps" value="${u.reps ? esc(u.reps) : ''}" placeholder="${e.type === 'time' ? t('seg') : t('reps')}" aria-label="${e.type === 'time' ? t('Segundos serie {n}', { n: k + 1 }) : t('Repeticiones serie {n}', { n: k + 1 })}"></td>
+                  <td>${u.complete ? '' : '⚠️'}<button class="ghost danger small" data-action="sv-del-set" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="${t('Quitar serie')}">✕</button></td>
                 </tr>`).join('')}
             </tbody></table>
-            <button class="ghost small" data-action="sv-add-set" data-i="${i}" data-j="${j}">+ Serie</button>
+            <button class="ghost small" data-action="sv-add-set" data-i="${i}" data-j="${j}">+ ${t('Serie')}</button>
             ${e.notes ? `<small class="muted">${esc(e.notes)}</small>` : ''}
-          </div>`).join('') || '<p class="muted">Sin ejercicios.</p>'}
+          </div>`).join('') || `<p class="muted">${t('Sin ejercicios.')}</p>`}
       </details>`;
   }).join('');
 
   const questions = sv.questions.length ? `
     <div class="card accent stack">
-      <h3>Antes de guardar…</h3>
+      <h3>${t('Antes de guardar…')}</h3>
       ${sv.questions.map((q, i) => `
         <div>
           <b>${esc(q.question)}</b>
           ${q.options?.length ? `<div class="chips" style="margin-top:6px">${q.options.map((o) => `<label class="chip"><input type="radio" name="svq_${i}" value="${esc(o)}"><span>${esc(o)}</span></label>`).join('')}</div>` : ''}
-          <input data-svq="${i}" placeholder="${q.options?.length ? 'Otra respuesta (opcional)' : 'Tu respuesta'}" style="margin-top:6px">
+          <input data-svq="${i}" placeholder="${q.options?.length ? t('Otra respuesta (opcional)') : t('Tu respuesta')}" style="margin-top:6px">
         </div>`).join('')}
-      <button class="primary block" data-action="sv-answer">Responder y actualizar</button>
+      <button class="primary block" data-action="sv-answer">${t('Responder y actualizar')}</button>
     </div>` : '';
 
   const n = sv.include.filter(Boolean).length;
   return `
-    <div class="card"><p style="margin:0">💬 ${esc(sv.message || 'Esto es lo que he entendido:')}</p></div>
+    <div class="card"><p style="margin:0">💬 ${esc(sv.message || t('Esto es lo que he entendido:'))}</p></div>
     ${questions}
-    ${sessions || '<div class="empty">No encontré sesiones en el texto.</div>'}
-    <button class="primary block" data-action="sv-save" ${n ? '' : 'disabled'}>${sv.target === 'edit' ? 'Guardar cambios' : sv.target === 'active' ? 'Añadir a mi entreno' : n === 1 ? 'Guardar 1 sesión' : `Guardar ${n} sesiones`}</button>
-    ${sv.target === 'edit' ? '' : '<button class="block" style="margin-top:8px" data-action="sv-back">✏️ Editar el texto</button>'}
-    <button class="ghost block" data-action="sv-cancel">Cancelar</button>`;
+    ${sessions || `<div class="empty">${t('No encontré sesiones en el texto.')}</div>`}
+    <button class="primary block" data-action="sv-save" ${n ? '' : 'disabled'}>${sv.target === 'edit' ? t('Guardar cambios') : sv.target === 'active' ? t('Añadir a mi entreno') : tn(n, 'Guardar {n} sesión', 'Guardar {n} sesiones')}</button>
+    ${sv.target === 'edit' ? '' : `<button class="block" style="margin-top:8px" data-action="sv-back">✏️ ${t('Editar el texto')}</button>`}
+    <button class="ghost block" data-action="sv-cancel">${t('Cancelar')}</button>`;
 }
 
 /* ---------- guardar ---------- */
@@ -286,7 +288,7 @@ function resolveExercise(e) {
     if (ex) return { ex, how: 'linked' };
   }
   if (e.forceNew) return { ex: null, how: 'new' };
-  const m = matchExercise(e.exercise, st.exercises);
+  const m = matchExercise(canonicalExercise(e.exercise), st.exercises);
   return m ? { ex: m.exercise, how: m.how } : { ex: null, how: 'new' };
 }
 
@@ -297,7 +299,7 @@ function ensureExercise(e) {
     if (r.how === 'similar' || r.how === 'linked') addAlias(r.ex, e.exercise);
     return r.ex;
   }
-  const ex = { id: ctx.uid(), name: e.exercise.trim(), muscle: e.muscle_group || 'Otros', type: e.type === 'time' ? 'time' : 'reps' };
+  const ex = { id: ctx.uid(), name: canonicalExercise(e.exercise).trim(), muscle: e.muscle_group || 'Otros', type: e.type === 'time' ? 'time' : 'reps' };
   S().exercises.push(ex);
   return ex;
 }
@@ -305,14 +307,14 @@ function ensureExercise(e) {
 /** Avisa de cómo se reconoció el ejercicio solo cuando no es evidente. */
 function linkPill(e) {
   const r = resolveExercise(e);
-  if (!r.ex) return ' <span class="pill warn">nuevo</span>';
-  return norm(r.ex.name) === norm(e.exercise) ? '' : ` <span class="pill">≈ ${esc(r.ex.name)}</span>`;
+  if (!r.ex) return ` <span class="pill warn">${t('nuevo')}</span>`;
+  return norm(r.ex.name) === norm(e.exercise) ? '' : ` <span class="pill">≈ ${esc(exLabel(r.ex.name))}</span>`;
 }
 
 /** En el historial se guarda todo como hecho; en un entreno en curso, lo incompleto queda pendiente para que lo termines. */
-const mapSets = (e, live = false) => e.sets.filter((t) => num(t.reps) > 0 || num(t.weight_kg) > 0).map((t) => ({
-  w: num(t.weight_kg) > 0 ? String(num(t.weight_kg)) : '', r: num(t.reps) > 0 ? String(Math.round(num(t.reps))) : '',
-  done: live ? t.complete !== false && num(t.reps) > 0 : true,
+const mapSets = (e, live = false) => e.sets.filter((u) => num(u.reps) > 0 || num(u.weight_kg) > 0).map((u) => ({
+  w: num(u.weight_kg) > 0 ? String(num(u.weight_kg)) : '', r: num(u.reps) > 0 ? String(Math.round(num(u.reps))) : '',
+  done: live ? u.complete !== false && num(u.reps) > 0 : true,
 }));
 
 /** Los ejercicios con la misma letra comparten bloque (id de grupo único por sesión). */
@@ -340,7 +342,7 @@ function applyNew() {
       return entry;
     });
     const start = fromISO(s.date);
-    const w = { id: ctx.uid(), name: s.name || 'Entreno', start, end: start + Math.max(1, s.duration_minutes || 60) * 60000, entries, source: sv.kind === 'import' ? 'importado' : 'dictado' };
+    const w = { id: ctx.uid(), name: s.name || t('Entreno'), start, end: start + Math.max(1, s.duration_minutes || 60) * 60000, entries, source: sv.kind === 'import' ? 'importado' : 'dictado' };
     // Si se parece a una rutina del plan, queda ligado a ella (así el calendario y las cargas lo reconocen).
     const rt = guessRoutine(st.routines, entries.map((x) => x.exerciseId), s.date);
     if (rt) w.routineId = rt.id;
@@ -401,36 +403,36 @@ function applyToActive() {
 function save() {
   const inc = sv.draft.sessions.filter((_, i) => sv.include[i]);
   if (sv.target === 'edit') {
-    if (!validISO(sv.draft.sessions[0].date)) { ctx.toast('Pon una fecha válida'); return; }
-    if (!applyEdit()) { ctx.toast('No se encontró el entreno'); return; }
+    if (!validISO(sv.draft.sessions[0].date)) { ctx.toast(t('Pon una fecha válida')); return; }
+    if (!applyEdit()) { ctx.toast(t('No se encontró el entreno')); return; }
     close();
     ctx.setTab('history');
     ctx.commit();
-    ctx.toast('Cambios guardados');
+    ctx.toast(t('Cambios guardados'));
     return;
   }
   if (sv.target !== 'active') {
     const bad = sv.draft.sessions.findIndex((s, i) => sv.include[i] && !validISO(s.date));
-    if (bad >= 0) { ctx.toast('Falta la fecha de una sesión: ponla para poder guardarla'); document.querySelectorAll('details.sess')[bad]?.setAttribute('open', ''); return; }
+    if (bad >= 0) { ctx.toast(t('Falta la fecha de una sesión: ponla para poder guardarla')); document.querySelectorAll('details.sess')[bad]?.setAttribute('open', ''); return; }
   }
-  const missing = inc.reduce((t, s) => t + incompleteOf(s), 0);
+  const missing = inc.reduce((n, x) => n + incompleteOf(x), 0);
   const go = () => {
     let msg;
     if (sv.target === 'active') {
       const sets = applyToActive();
       close();
       ctx.setTab('train');
-      msg = `Añadidas ${sets} series a tu entreno`;
+      msg = t('Añadidas {n} series a tu entreno', { n: sets });
     } else {
       const { added, skipped } = applyNew();
       close();
       ctx.setTab('history');
-      msg = `${added === 1 ? 'Sesión guardada' : `${added} sesiones guardadas`}${skipped ? ` · ${skipped} ya estaban` : ''}`;
+      msg = `${tn(added, 'Sesión guardada', '{n} sesiones guardadas')}${skipped ? ` · ${t('{n} ya estaban', { n: skipped })}` : ''}`;
     }
     ctx.commit();
     ctx.toast(msg);
   };
-  if (missing) ctx.ask(`Quedan ${missing} series sin peso o repeticiones claros (⚠️). Se guardarán tal cual. ¿Guardar igualmente?`, 'Guardar igualmente', go);
+  if (missing) ctx.ask(t('Quedan {n} series sin peso o repeticiones claros (⚠️). Se guardarán tal cual. ¿Guardar igualmente?', { n: missing }), t('Guardar igualmente'), go);
   else go();
 }
 
@@ -439,7 +441,7 @@ function save() {
 function countUI(box) {
   const n = document.querySelector('[data-sv-count]');
   if (!n) return;
-  n.textContent = `${box.value.length.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')}`;
+  n.textContent = `${fmtNum(box.value.length)} / ${fmtNum(MAX_DOC)}`;
   n.classList.toggle('over', box.value.length > MAX_DOC);
 }
 
@@ -450,11 +452,11 @@ export function onSessionsInput(el) {
   const s = sv.draft.sessions[+i];
   if (kind === 's') { s[rest[0]] = el.value; return; }
   const [j, k, field] = rest;
-  const t = s.entries[+j].sets[+k];
-  t[field] = field === 'reps' ? Math.max(0, Math.round(num(el.value))) : num(el.value);
+  const set = s.entries[+j].sets[+k];
+  set[field] = field === 'reps' ? Math.max(0, Math.round(num(el.value))) : num(el.value);
   // Si la persona corrige una serie, se da por revisada.
-  if (num(t.reps) > 0) {
-    t.complete = true;
+  if (num(set.reps) > 0) {
+    set.complete = true;
     const tr = el.closest('tr');
     tr?.classList.remove('warn');
   }
@@ -468,16 +470,16 @@ export async function onSessionsFile(input) {
   const file = input.files?.[0];
   input.value = '';
   if (!file) return;
-  if (file.size > MAX_DOC * 4) { ctx.toast('El archivo es demasiado grande'); return; }
+  if (file.size > MAX_DOC * 4) { ctx.toast(t('El archivo es demasiado grande')); return; }
   let text = '';
-  try { text = await file.text(); } catch { ctx.toast('No se pudo leer el archivo'); return; }
-  if (text.includes('\u0000') || /^%PDF/.test(text)) { ctx.toast('Ese archivo no es de texto. Para PDF o fotos, pásalo antes por otra IA con el prompt'); return; }
+  try { text = await file.text(); } catch { ctx.toast(t('No se pudo leer el archivo')); return; }
+  if (text.includes('\u0000') || /^%PDF/.test(text)) { ctx.toast(t('Ese archivo no es de texto. Para PDF o fotos, pásalo antes por otra IA con el prompt')); return; }
   const merged = sv.text.trim() ? `${sv.text.trim()}\n\n---\n\n${text.trim()}` : text.trim();
-  if (merged.length > MAX_DOC) { ctx.toast(`Demasiado largo (${merged.length.toLocaleString('es')} de ${MAX_DOC.toLocaleString('es')} caracteres)`); return; }
+  if (merged.length > MAX_DOC) { ctx.toast(t('Demasiado largo ({n} de {max} caracteres)', { n: fmtNum(merged.length), max: fmtNum(MAX_DOC) })); return; }
   sv.text = merged;
   const box = document.getElementById('sv-text');
   if (box) { box.value = merged; countUI(box); }
-  ctx.toast(`Cargado: ${file.name}`);
+  ctx.toast(t('Cargado: {name}', { name: file.name }));
 }
 
 function openEdit(id) {
@@ -491,13 +493,13 @@ function openEdit(id) {
     let block = '';
     if (e.group) { letters[e.group] ??= String.fromCharCode(65 + next++); block = letters[e.group]; }
     return {
-      exercise: ex?.name || 'Ejercicio', exerciseId: e.exerciseId, muscle_group: ex?.muscle || 'Otros', type: ex?.type === 'time' ? 'time' : 'reps', block, notes: '',
+      exercise: ex?.name || t('Ejercicio'), exerciseId: e.exerciseId, muscle_group: ex?.muscle || 'Otros', type: ex?.type === 'time' ? 'time' : 'reps', block, notes: '',
       sets: e.sets.filter((s) => s.done !== false).map((s) => ({ weight_kg: num(s.w), reps: num(s.r), complete: true })),
     };
   });
   Object.assign(sv, {
     active: true, step: 'review', kind: 'edit', target: 'edit', editId: id, text: '', loading: null, error: null, lastRun: null,
-    message: 'Edita lo que necesites.', questions: [], include: [true],
+    message: t('Edita lo que necesites.'), questions: [], include: [true],
     draft: { sessions: [{ date: isoLocal(w.start), name: w.name, duration_minutes: Math.round((w.end - w.start) / 60000), entries, notes: '' }] },
   });
   ctx.render();
@@ -516,14 +518,14 @@ export const sessionsActions = {
   'sv-link'(_, el) {
     const e = sv.draft.sessions[+el.dataset.i].entries[+el.dataset.j];
     const cur = resolveExercise(e);
-    const list = [...S().exercises].sort((a, b) => a.name.localeCompare(b.name));
+    const list = [...S().exercises].sort((a, b) => exLabel(a.name).localeCompare(exLabel(b.name), getLang()));
     ctx.openDialog(`
-      <h2>Vincular «${esc(e.exercise)}»</h2>
+      <h2>${t('Vincular «{name}»', { name: esc(exLabel(e.exercise)) })}</h2>
       <div class="pick-list">
-        <label><input type="radio" name="link" value="" ${cur.ex ? '' : 'checked'}> ➕ Crear como ejercicio nuevo</label>
-        ${list.map((x) => `<label><input type="radio" name="link" value="${x.id}" ${cur.ex?.id === x.id ? 'checked' : ''}> ${esc(x.name)} <span class="muted">· ${esc(x.muscle)}</span></label>`).join('')}
+        <label><input type="radio" name="link" value="" ${cur.ex ? '' : 'checked'}> ➕ ${t('Crear como ejercicio nuevo')}</label>
+        ${list.map((x) => `<label><input type="radio" name="link" value="${x.id}" ${cur.ex?.id === x.id ? 'checked' : ''}> ${esc(exLabel(x.name))} <span class="muted">· ${esc(t(x.muscle))}</span></label>`).join('')}
       </div>
-      ${ctx.dialogButtons('Vincular')}`,
+      ${ctx.dialogButtons(t('Vincular'))}`,
     (fd) => {
       const v = fd.get('link');
       if (v) { e.exerciseId = v; delete e.forceNew; } else { delete e.exerciseId; e.forceNew = true; }
@@ -541,9 +543,9 @@ export const sessionsActions = {
   'sv-retry'() { const r = sv.lastRun; if (r) run(r.text, r.fn); return false; },
   'sv-parse'() {
     const text = sv.text.trim();
-    if (!text) { ctx.toast('Cuéntame primero qué entrenaste'); return false; }
-    if (text.length > MAX_DOC) { ctx.toast(`El texto supera los ${MAX_DOC.toLocaleString('es')} caracteres`); return false; }
-    run(sv.kind === 'import' ? 'Leyendo tu historial…' : 'Ordenando tu sesión…', async (o) => { setDraft(await callAI('sessions', baseInput(), o)); });
+    if (!text) { ctx.toast(t('Cuéntame primero qué entrenaste')); return false; }
+    if (text.length > MAX_DOC) { ctx.toast(t('El texto supera los {max} caracteres', { max: fmtNum(MAX_DOC) })); return false; }
+    run(sv.kind === 'import' ? t('Leyendo tu historial…') : t('Ordenando tu sesión…'), async (o) => { setDraft(await callAI('sessions', baseInput(), o)); });
     return false;
   },
   'sv-answer'() {
@@ -552,9 +554,9 @@ export const sessionsActions = {
       const chosen = document.querySelector(`input[name="svq_${i}"]:checked`)?.value;
       return { question: q.question, answer: other || chosen || '' };
     }).filter((a) => a.answer);
-    if (!answers.length) { ctx.toast('Responde al menos una pregunta'); return false; }
+    if (!answers.length) { ctx.toast(t('Responde al menos una pregunta')); return false; }
     const draft = sv.draft;
-    run('Actualizando tu sesión…', async (o) => { setDraft(await callAI('sessions', { ...baseInput(), draft, answers }, o)); });
+    run(t('Actualizando tu sesión…'), async (o) => { setDraft(await callAI('sessions', { ...baseInput(), draft, answers }, o)); });
     return false;
   },
   'sv-del-entry'(_, el) { sv.draft.sessions[+el.dataset.i].entries.splice(+el.dataset.j, 1); ctx.render(); return false; },

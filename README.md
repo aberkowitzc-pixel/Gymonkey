@@ -33,6 +33,8 @@ App web (PWA) para registrar tus entrenamientos en el gimnasio, con un **entrena
 
 Sin iniciar sesión, los datos se guardan solo en el dispositivo. Con sesión iniciada se guardan también en tu cuenta (Firebase Firestore).
 
+- **Español, inglés y hebreo.** El idioma se elige en ⚙️ Ajustes (por defecto, el del navegador). En hebreo toda la interfaz se invierte (de derecha a izquierda). La IA responde en el idioma elegido y los ejercicios se reconocen en cualquiera de los tres. Para añadir textos nuevos: escríbelos con `t('Texto en español')` y añade su traducción en `lang/en.js` y `lang/he.js`; `npm test` falla si falta alguna (`node tools/i18n-missing.mjs` lista lo que falta).
+
 ## Probarla en local
 
 ```bash

@@ -18,17 +18,17 @@
     <img src="icon.svg" alt="" class="logo">
     <h1>Gymonkey</h1>
     <div id="account"></div>
-    <button class="ghost gear" data-action="settings" aria-label="Ajustes">⚙️</button>
+    <button class="ghost gear" data-action="settings" data-i18n-aria="Ajustes" aria-label="Ajustes">⚙️</button>
   </header>
 
   <main id="view" aria-live="polite"></main>
 
-  <nav class="tabbar" aria-label="Secciones">
-    <button data-tab="train" class="active"><span>🏋️</span>Entrenar</button>
-    <button data-tab="plan"><span>🧠</span>Plan</button>
-    <button data-tab="routines"><span>📋</span>Rutinas</button>
-    <button data-tab="history"><span>🗓️</span>Historial</button>
-    <button data-tab="progress"><span>📈</span>Progreso</button>
+  <nav class="tabbar" data-i18n-aria="Secciones" aria-label="Secciones">
+    <button data-tab="train" class="active"><span>🏋️</span><span class="lbl" data-i18n="Entrenar">Entrenar</span></button>
+    <button data-tab="plan"><span>🧠</span><span class="lbl" data-i18n="Plan">Plan</span></button>
+    <button data-tab="routines"><span>📋</span><span class="lbl" data-i18n="Rutinas">Rutinas</span></button>
+    <button data-tab="history"><span>🗓️</span><span class="lbl" data-i18n="Historial">Historial</span></button>
+    <button data-tab="progress"><span>📈</span><span class="lbl" data-i18n="Progreso">Progreso</span></button>
   </nav>
 
   <dialog id="dialog"></dialog>
