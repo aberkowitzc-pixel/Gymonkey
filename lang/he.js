@@ -597,4 +597,6 @@ export default {
   "Seguir al sistema": "לפי המערכת",
   "Claro": "בהיר",
   "Oscuro": "כהה",
+  "Tu plan está listo": "התוכנית שלך מוכנה",
+  "Tu plan está listo. Empiézalo para ver tu calendario y tus rutinas en Entrenar.": "התוכנית שלך מוכנה. התחל אותה כדי לראות את לוח השנה והשגרות שלך באימון.",
 };

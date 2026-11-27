@@ -371,6 +371,7 @@ function chatView() {
     <div class="bubbles">
       ${intro}
       ${msgs.map((m) => bubble(m, m.id === lastChange && canUndo)).join('')}
+      ${plan && !plan.startDate ? `<div class="bubble coach"><p>${t('Tu plan está listo. Empiézalo para ver tu calendario y tus rutinas en Entrenar.')}</p><button class="primary" data-action="plan-apply">${t('Empezar el plan')}${startWeek(plan) > 1 ? ` · ${t('semana {n}', { n: startWeek(plan) })}` : ''}</button></div>` : ''}
       ${translate}
       ${ui.loading?.chat ? loadingCard() : ''}
       <div id="chat-end"></div>
@@ -802,6 +803,8 @@ export const planActions = {
     const plan = S().plan;
     if (!plan.startDate) plan.startDate = startOfDay(Date.now()) - (startWeek(plan) - 1) * 7 * DAY;
     applyMeso(weekInfo(plan).meso);
+    ui.showPlan = false;
+    ctx.setTab('train');
     ctx.toast(t('Rutinas creadas: las tienes en Entrenar'));
   },
   'plan-undo'() {
@@ -928,7 +931,11 @@ export function planTrainBanner() {
         <div class="row"><button class="primary small" data-action="chat-translate">${t('Traducir mi plan')}</button><button class="ghost small" data-action="chat-no-translate">${t('Ahora no')}</button></div></div>`
     : '';
   const wi = weekInfo(plan);
-  if (!wi?.started || plan.appliedMeso === wi.meso) return tr;
+  if (!wi?.started) {
+    return `${tr}<div class="card accent stack"><b>${t('Tu plan está listo')}</b><span class="muted">${esc(plan.title)}</span>
+      <button class="primary block" data-action="plan-apply">${t('Empezar el plan')}${startWeek(plan) > 1 ? ` · ${t('semana {n}', { n: startWeek(plan) })}` : ''}</button></div>`;
+  }
+  if (plan.appliedMeso === wi.meso) return tr;
   return `${tr}<div class="card plan-banner"><button class="primary block" data-action="plan-apply">${t('Nuevo bloque: actualizar rutinas')}</button></div>`;
 }
 

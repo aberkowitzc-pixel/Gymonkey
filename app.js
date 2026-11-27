@@ -11,7 +11,7 @@ import { initLoads, viewLoads, loadsActive, loadsBusy, loadsTick, loadsLeave, lo
 import { buildWeeks, shortName, isoLocal } from './calendar.js';
 import { buildWeekContext, hasDeficit, moveOptions, setMove, adjustmentsFor, pruneSchedule } from './weekplan.js';
 import { initWeek, viewWeek, weekActive, weekBusy, weekTick, weekLeave, weekActions, onWeekChange } from './week.js';
-import { matchExercise, mergeExercises, findDuplicates } from './exercises.js';
+import { matchExercise, mergeExercises, findDuplicates, dedupeLibrary } from './exercises.js';
 import { t, tn, T, E, tData, getLang, setLang, LANGS, detectLang, fmtNum, fwd, dayShort, dayLetter, exLabel, canonicalExercise, fmtDateShort, fmtTime, isRTL, locale } from './i18n.js';
 import { ic } from './icons.js';
 import { initSessions, viewSessions, sessionsActive, sessionsBusy, sessionsTick, sessionsLeave, sessionsActions, onSessionsInput, onSessionsChange, onSessionsFile } from './sessions.js';
@@ -41,7 +41,7 @@ function defaultExercises() {
     [E('Extensión de tríceps'), 'Brazos'],
     [E('Fondos'), 'Brazos'],
     [E('Plancha'), 'Core', 'time'],
-  ].map(([name, muscle, type = 'reps']) => ({ id: uid(), name, muscle, type }));
+  ].map(([name, muscle, type = 'reps']) => ({ id: `ex-${name.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-')}`, name, muscle, type }));
 }
 
 function defaultState() {
@@ -51,9 +51,9 @@ function defaultState() {
     settings: { ...DEFAULT_SETTINGS },
     exercises,
     routines: [
-      { id: uid(), name: T('Empuje (Push)'), exerciseIds: [ex(E('Press de banca')), ex(E('Press militar')), ex(E('Elevaciones laterales')), ex(E('Extensión de tríceps'))] },
-      { id: uid(), name: T('Tirón (Pull)'), exerciseIds: [ex(E('Dominadas')), ex(E('Remo con barra')), ex(E('Jalón al pecho')), ex(E('Curl de bíceps'))] },
-      { id: uid(), name: T('Pierna (Legs)'), exerciseIds: [ex(E('Sentadilla')), ex(E('Peso muerto')), ex(E('Prensa de piernas')), ex(E('Zancadas'))] },
+      { id: 'rt-push', name: T('Empuje (Push)'), exerciseIds: [ex(E('Press de banca')), ex(E('Press militar')), ex(E('Elevaciones laterales')), ex(E('Extensión de tríceps'))] },
+      { id: 'rt-pull', name: T('Tirón (Pull)'), exerciseIds: [ex(E('Dominadas')), ex(E('Remo con barra')), ex(E('Jalón al pecho')), ex(E('Curl de bíceps'))] },
+      { id: 'rt-legs', name: T('Pierna (Legs)'), exerciseIds: [ex(E('Sentadilla')), ex(E('Peso muerto')), ex(E('Prensa de piernas')), ex(E('Zancadas'))] },
     ],
     workouts: [],
     active: null,
@@ -77,6 +77,7 @@ function migrate(s) {
   s.moves ??= [];
   s.adjust ??= [];
   s.meta = { deletedWorkouts: [], ...(s.meta || {}) };
+  dedupeLibrary(s);
   pruneSchedule(s);
   return s;
 }

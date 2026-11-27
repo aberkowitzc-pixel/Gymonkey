@@ -125,3 +125,28 @@ export function mergeExercises(state, fromId, toId, { newEntry } = {}) {
   state.exercises = state.exercises.filter((e) => e.id !== fromId);
   return true;
 }
+
+/**
+ * Quita duplicados exactos de la biblioteca: ejercicios con el mismo nombre y tipo (se unen conservando historial)
+ * y rutinas propias idénticas. Pasa cuando se unen los datos de un dispositivo nuevo con los de la cuenta y los
+ * ejemplos de cada lado tenían identificadores distintos.
+ */
+export function dedupeLibrary(state) {
+  const seen = new Map();
+  let changed = false;
+  for (const e of [...state.exercises]) {
+    const k = `${norm(e.name)}|${e.type || 'reps'}`;
+    const keep = seen.get(k);
+    if (keep) { if (mergeExercises(state, e.id, keep.id)) changed = true; } else seen.set(k, e);
+  }
+  const sig = new Set();
+  const before = state.routines.length;
+  state.routines = state.routines.filter((r) => {
+    if (r.fromPlan) return true;
+    const k = `${norm(r.name)}|${r.exerciseIds.join(',')}`;
+    if (sig.has(k)) return false;
+    sig.add(k);
+    return true;
+  });
+  return changed || state.routines.length !== before;
+}

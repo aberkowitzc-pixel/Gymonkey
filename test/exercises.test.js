@@ -1,6 +1,6 @@
-import { test } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchExercise, findDuplicates, mergeExercises, addAlias } from '../exercises.js';
+import { matchExercise, findDuplicates, mergeExercises, addAlias, dedupeLibrary } from '../exercises.js';
 
 const ex = (id, name, extra = {}) => ({ id, name, muscle: 'x', type: 'reps', ...extra });
 const lib = [ex('pb', 'Press de banca'), ex('sq', 'Sentadilla'), ex('sb', 'Sentadilla búlgara'), ex('rb', 'Remo con barra'), ex('rm', 'Remo con mancuerna'), ex('dm', 'Dominadas'), ex('el', 'Elevaciones laterales'), ex('pbd', 'Press de banca con mancuernas'), ex('cu', 'Curl de bíceps')];
@@ -88,4 +88,28 @@ test('al unir, también se recalcula el ejercicio del entreno en curso que recib
   assert.equal(state.workouts[0].entries[0].exerciseId, 'sq');
   assert.deepEqual(state.exercises.map((e) => e.name), ['Sentadilla']);
   assert.deepEqual(state.exercises[0].aliases, ['Sentadillas']);
+});
+
+test('dedupeLibrary une ejercicios repetidos y quita rutinas idénticas (datos de ejemplo duplicados)', () => {
+  const state = {
+    exercises: [
+      { id: 'a1', name: 'Sentadilla', muscle: 'Piernas', type: 'reps' },
+      { id: 'b1', name: 'Sentadilla', muscle: 'Piernas', type: 'reps' },
+      { id: 'a2', name: 'Plancha', muscle: 'Core', type: 'time' },
+      { id: 'b2', name: 'Plancha', muscle: 'Core', type: 'time' },
+    ],
+    routines: [
+      { id: 'r1', name: 'Pierna', exerciseIds: ['a1', 'a2'] },
+      { id: 'r2', name: 'Pierna', exerciseIds: ['b1', 'b2'] },
+      { id: 'r3', name: 'Torso A', exerciseIds: ['a1'], fromPlan: true },
+      { id: 'r4', name: 'Torso A', exerciseIds: ['b1'], fromPlan: true },
+    ],
+    workouts: [{ id: 'w', entries: [{ exerciseId: 'b1', sets: [{ w: '60', r: '5', done: true }] }] }],
+    active: null,
+  };
+  assert.equal(dedupeLibrary(state), true);
+  assert.equal(state.exercises.length, 2);
+  assert.deepEqual(state.routines.map((r) => r.id), ['r1', 'r3', 'r4']);   // la del plan no se toca
+  assert.equal(state.workouts[0].entries[0].exerciseId, 'a1');             // el historial sigue al ejercicio que se queda
+  assert.equal(dedupeLibrary(state), false);
 });

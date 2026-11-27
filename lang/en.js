@@ -597,4 +597,6 @@ export default {
   "Seguir al sistema": "Follow the system",
   "Claro": "Light",
   "Oscuro": "Dark",
+  "Tu plan está listo": "Your plan is ready",
+  "Tu plan está listo. Empiézalo para ver tu calendario y tus rutinas en Entrenar.": "Your plan is ready. Start it to see your calendar and routines in Train.",
 };
