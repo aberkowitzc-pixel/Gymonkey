@@ -6,55 +6,67 @@
 
 export const MAX_DOC = 40000;
 
-export const PROMPT_OTRA_IA = `Voy a darte mi plan de entrenamiento actual y mis notas (pueden ser texto pegado, capturas, fotos o un PDF). Tu tarea es EXTRAER la información relevante y devolverla en un documento Markdown con la estructura de abajo, para que otra herramienta la use y dé continuidad a lo que ya estoy haciendo.
+export const PROMPT_OTRA_IA = `Quiero llevar mi información de entrenamiento a otra aplicación (un entrenador con IA) para que continúe mi programa sin empezar de cero. Necesito que, a partir de TODO lo que sabes de mí, prepares un resumen en Markdown con la estructura que te indico abajo.
+
+Usa todas las fuentes que tengas: esta conversación, tu memoria y las conversaciones anteriores a las que tengas acceso, y cualquier archivo o imagen que haya compartido contigo. Cuanto más contexto útil incluyas, mejor.
 
 Reglas:
-- Devuelve SOLO el documento Markdown, sin explicaciones antes ni después.
-- No inventes nada. Si un dato no aparece, escribe "No consta".
-- No me des consejos ni modifiques el plan: solo extrae y ordena.
-- Omite datos personales (nombre, correo, teléfono, ubicación).
-- Usa nombres de ejercicios en español y pesos en kg (convierte si hace falta).
-- Si algo es ambiguo, anótalo en "Observaciones" en vez de suponerlo.
+- Entrégalo todo dentro de UN solo bloque de código Markdown (empieza con \`\`\`markdown y termina con \`\`\`) para que pueda copiarlo de una vez. No escribas nada antes ni después del bloque.
+- No me hagas preguntas ahora: usa lo que tengas. Si no sabes algo, escribe "No consta". No inventes cifras, no redondees ni completes con valores típicos.
+- Si un dato cambió con el tiempo, ordénalo cronológicamente y pon fechas o semanas. Si hay datos contradictorios, quédate con el más reciente y anota la contradicción en "Observaciones".
+- Solo extrae y ordena. No añadas consejos, valoraciones ni cambios al plan.
+- Prioriza las últimas 8-12 semanas con detalle y resume lo anterior. Sé completo pero conciso.
+- Omite datos que me identifiquen (nombre, correo, teléfono, ubicación). La edad, el sexo y el peso corporal sí son útiles: inclúyelos si constan.
+- Pesos en kg y nombres de ejercicios en español (convierte si hace falta).
 
-Estructura que debes devolver:
+Estructura del documento:
 
 # Contexto de entrenamiento
 
 ## Perfil
-- Objetivo:
-- Tiempo entrenando con pesas:
-- Días que entreno por semana (y cuáles):
-- Duración de cada sesión (minutos):
-- Material disponible:
-- Lesiones, molestias o limitaciones:
+- Objetivo principal (y plazos o eventos, si los hay):
+- Edad aproximada, sexo y peso corporal (tendencia si la conoces):
+- Tiempo entrenando con pesas y nivel:
+- Días que entreno por semana (y cuáles) y duración de cada sesión:
+- Material y gimnasio disponibles:
+- Lesiones, molestias o limitaciones (con su historia):
+
+## Historial de entrenamiento
+- Planes o métodos anteriores y cuánto duraron:
+- Qué me funcionó bien y qué no, y por qué:
 
 ## Plan actual
-- Nombre o tipo de plan (por ejemplo, torso/pierna, push/pull/legs, full body):
-- Duración total del plan y semana en la que voy ahora:
-- Fase o bloque actual (por ejemplo, acumulación, fuerza, descarga):
+- Tipo de plan (por ejemplo, torso/pierna, push/pull/legs, full body) y desde cuándo:
+- Duración total y semana en la que voy ahora:
+- Fase o bloque actual (acumulación, fuerza, descarga…):
 
 ### Día 1 — nombre (día de la semana)
-| Ejercicio | Series × repeticiones | Peso actual (kg) | RIR/RPE | Descanso |
-|---|---|---|---|---|
+| Ejercicio | Series × repeticiones | Peso actual (kg) | RIR/RPE | Descanso | Notas |
+|---|---|---|---|---|---|
 
 (Repite "### Día N" para cada día de entrenamiento.)
 
-## Marcas recientes
-- Ejercicio: peso × repeticiones (semana o fecha), de las últimas 4-6 semanas si las hay.
+## Progresión y marcas
+- Para cada ejercicio principal, la evolución peso × repeticiones con fechas o semanas, de la más antigua a la más reciente (y 1RM estimados si los calculaste):
 
 ## Cómo me está yendo
-- Ejercicios o músculos donde progreso bien:
+- Dónde progreso bien:
 - Ejercicios estancados:
-- Fatiga, sueño, molestias:
-- Adherencia (sesiones que suelo cumplir):
+- Adherencia (sesiones que suelo cumplir) y cambios recientes de rutina:
+- Fatiga, sueño, estrés y molestias actuales:
+- Alimentación y peso corporal, solo si lo hemos comentado (datos, no consejos):
+
+## Preferencias
+- Ejercicios que me gustan o quiero conservar:
+- Ejercicios que no me gustan o quiero evitar:
+- Cardio, deportes u otras actividades que hago:
 
 ## Qué quiero cambiar
-- Cambios que pido (por ejemplo, menos días, más pierna, evitar un ejercicio):
+- Cambios que he pedido o decisiones pendientes:
 
 ## Observaciones
-- Cualquier dato ambiguo o que no encaje en lo anterior:
-
-Aquí está mi información:
+- De dónde salen los datos (esta conversación, memoria, archivos) y qué tan completos son:
+- Datos que faltan, ambiguos o contradictorios:
 `;
 
 const day = (ts) => new Date(ts).toISOString().slice(0, 10);

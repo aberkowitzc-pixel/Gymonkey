@@ -317,22 +317,23 @@ function contextBlock(value = '', open = false) {
   return `
     <details class="ctx" ${open || value ? 'open' : ''}>
       <summary><b>📎 Ya entreno con un plan: adjúntalo</b> <span class="muted">(opcional)</span></summary>
-      <p class="muted">Sube un archivo <b>.md</b> o <b>.txt</b>, o pega el texto de tu plan actual, tus notas o tus marcas. El entrenador le dará continuidad en vez de empezar de cero.</p>
+      <p class="muted">Sube un archivo <b>.md</b> o <b>.txt</b>, o pega el texto de tu plan actual, tus notas, tus marcas o el resumen de otra IA. El entrenador le dará continuidad en vez de empezar de cero.</p>
       <label class="file-btn"><input type="file" data-ctx-file accept=".md,.markdown,.txt,.csv,.json,text/*"><span>📄 Subir archivo</span></label>
       <textarea name="context_doc" data-ctxdoc rows="6" placeholder="Pega aquí tu plan, tus notas o el resultado de otra IA…">${esc(value)}</textarea>
       <div class="ctx-count muted" data-ctx-count>${value.length.toLocaleString('es')} / ${MAX_DOC.toLocaleString('es')} caracteres</div>
       <div class="ctx-tools">
-        <p class="muted" style="margin:0"><b>¿Tu plan está en PDF, foto o una app?</b> Pídele a otra IA (ChatGPT, Gemini…) que lo ordene:</p>
+        <p class="muted" style="margin:0"><b>¿Ya has hablado de tu entrenamiento con otra IA</b> (ChatGPT, Gemini, Claude…)? Pídele que resuma todo lo que sabe de ti:</p>
         <div class="row wrap">
           <button type="button" class="small" data-action="ctx-copy-prompt">📋 Copiar prompt para otra IA</button>
           <button type="button" class="small" data-action="ctx-copy-export">📤 Copiar mis datos de Gymonkey</button>
           <button type="button" class="small" data-action="ctx-download-export">⬇️ Descargar .md</button>
         </div>
         <ol class="muted ctx-steps">
-          <li>Copia el prompt y pégalo en la otra IA.</li>
-          <li>Adjunta o pega debajo tu plan (texto, captura o PDF).</li>
-          <li>Copia el Markdown que te devuelva y pégalo aquí arriba (o guárdalo como .md y súbelo).</li>
+          <li>Abre esa misma conversación con tu otra IA, la que ya tiene tu historial (cuanto más contexto tenga, mejor).</li>
+          <li>Pega el prompt y envíalo. Te devolverá un resumen en Markdown con todo lo que sabe.</li>
+          <li>Cópialo y pégalo aquí arriba (o guárdalo como .md y súbelo).</li>
         </ol>
+        <p class="muted" style="margin:0">¿Tu plan está solo en un PDF o una foto? Adjúntalo en ese mismo mensaje.</p>
         <p class="muted" style="margin:0">🔒 Lo que adjuntes se envía a la IA para generar tu plan. No incluyas nombre, correo ni otros datos personales.</p>
       </div>
     </details>`;
@@ -617,7 +618,7 @@ export async function onContextFile(input) {
   if (file.size > MAX_DOC * 4) { ctx.toast('El archivo es demasiado grande'); return; }
   let text = '';
   try { text = await file.text(); } catch { ctx.toast('No se pudo leer el archivo'); return; }
-  if (text.includes('\u0000') || /^%PDF/.test(text)) { ctx.toast('Ese archivo no es de texto. Para PDF o fotos usa el prompt para otra IA'); return; }
+  if (text.includes('\u0000') || /^%PDF/.test(text)) { ctx.toast('Ese archivo no es de texto. Para PDF o fotos, adjúntalos a tu otra IA y usa el prompt'); return; }
   const merged = box.value.trim() ? `${box.value.trim()}\n\n---\n\n${text.trim()}` : text.trim();
   if (merged.length > MAX_DOC) { ctx.toast(`Demasiado largo (${merged.length.toLocaleString('es')} de ${MAX_DOC.toLocaleString('es')} caracteres). Resume el archivo`); return; }
   box.value = merged;

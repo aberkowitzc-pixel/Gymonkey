@@ -13,10 +13,24 @@ const workouts = [
   { start: Date.UTC(2026, 10, 20), end: Date.UTC(2026, 10, 20, 1), name: 'Torso A', entries: [{ exerciseId: 'a', sets: [{ w: 60, r: 8 }, { w: 60, r: 7 }] }] },
 ];
 
-test('el prompt para otra IA pide un documento con la estructura que lee el entrenador', () => {
-  for (const h of ['## Perfil', '## Plan actual', '## Marcas recientes', '## Cómo me está yendo', '## Qué quiero cambiar']) assert.ok(PROMPT_OTRA_IA.includes(h), h);
-  assert.match(PROMPT_OTRA_IA, /No inventes nada/);
-  assert.match(PROMPT_OTRA_IA, /datos personales/);
+test('el prompt pide resumir lo que la otra IA ya sabe de la persona, no entregarle datos', () => {
+  // Orientación: se pega en una conversación que ya tiene el historial.
+  assert.match(PROMPT_OTRA_IA, /a partir de TODO lo que sabes de mí/);
+  assert.match(PROMPT_OTRA_IA, /esta conversación, tu memoria y las conversaciones anteriores/);
+  assert.doesNotMatch(PROMPT_OTRA_IA, /Voy a darte|Aquí está mi información|te voy a pasar/i);
+  assert.doesNotMatch(PROMPT_OTRA_IA, /Aquí está/);
+  assert.ok(!PROMPT_OTRA_IA.trimEnd().endsWith(':') || /Datos que faltan/.test(PROMPT_OTRA_IA), 'no debe terminar esperando que se pegue algo');
+});
+
+test('el prompt cubre todo el contexto útil con la estructura que lee el entrenador', () => {
+  for (const h of ['## Perfil', '## Historial de entrenamiento', '## Plan actual', '## Progresión y marcas', '## Cómo me está yendo', '## Preferencias', '## Qué quiero cambiar', '## Observaciones']) assert.ok(PROMPT_OTRA_IA.includes(h), h);
+  assert.match(PROMPT_OTRA_IA, /No inventes cifras/);
+  assert.match(PROMPT_OTRA_IA, /No consta/);
+  assert.match(PROMPT_OTRA_IA, /contradictorios|contradicción/);
+  assert.match(PROMPT_OTRA_IA, /Omite datos que me identifiquen/);
+  assert.match(PROMPT_OTRA_IA, /UN solo bloque de código Markdown/);
+  assert.match(PROMPT_OTRA_IA, /No me hagas preguntas/);
+  assert.match(PROMPT_OTRA_IA, /No añadas consejos/);
   assert.ok(PROMPT_OTRA_IA.length < MAX_DOC / 4);
 });
 

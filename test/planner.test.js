@@ -100,3 +100,18 @@ test('el esquema incluye start_week', () => {
   assert.equal(planSchema.properties.start_week.type, 'integer');
   assert.ok(planSchema.required.includes('start_week'));
 });
+
+test('si el documento llega dentro de un bloque ```markdown, se quita la valla', async () => {
+  const { seen, client } = capture();
+  await runPlanner(client, 'generate', { profile, context_doc: '```markdown\n# Contexto de entrenamiento\n- Objetivo: fuerza\n```', today: '2026-11-27' });
+  const text = seen.params.messages[0].content;
+  assert.match(text, /<documento>\n# Contexto de entrenamiento\n- Objetivo: fuerza\n<\/documento>/);
+  assert.doesNotMatch(text, /```/);
+});
+
+test('el entrenador sabe usar el historial, las preferencias y "No consta"', async () => {
+  const { seen, client } = capture();
+  await runPlanner(client, 'generate', { profile, context_doc: 'x', today: '2026-11-27' });
+  assert.match(seen.params.system, /No consta/);
+  assert.match(seen.params.system, /respeta los ejercicios que quiere evitar/);
+});
