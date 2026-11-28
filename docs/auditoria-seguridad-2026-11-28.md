@@ -10,6 +10,17 @@ Commit auditado: `1e957e9`. Metodología: skills de Trail of Bits instalados en 
 | 3. Cadena de suministro | `supply-chain-risk-auditor` (+ `npm audit`) | F6 |
 | 4. Análisis estático | `semgrep` (OSS) | 784 resultados brutos; 1 relevante (F2), el resto falsos positivos o ruido |
 
+## Estado de las correcciones (aplicadas tras la auditoría)
+
+| ID | Corrección | Comprobación |
+|---|---|---|
+| F1 | Las respuestas que la IA ya generó (`max_tokens`, `refusal`, formato inesperado) se marcan `billed` y no devuelven la cuota (`lib/planner.js`, `lib/handler.js`). | PoC: 2 peticiones servidas de 10 (límite 2). Test nuevo en `test/handler.test.js`. |
+| F2 | `esc(day.movedTo)` y `esc(x.sets)`. `migrate()` descarta `moves` y `adjust` con fechas que no son ISO y fuerza `sets` a número; cubre la copia local, la importada y la de la nube (`app.js`). | PoC: el movimiento malicioso se descarta y no se ejecuta JS. |
+| F3 | `ALLOW_ANONYMOUS` se ignora con `VERCEL_ENV=production`, y la protección 503 también se aplica en producción (`lib/auth.js`, `lib/handler.js`). | Test nuevo. |
+| F4 | `generate` falla en cerrado (503 «El control de uso no está disponible…») si Upstash no responde; el resto sigue en abierto (`lib/quota.js`). | Test actualizado en `test/quota.test.js`. |
+| F5 | `vercel.json`: `Content-Security-Policy` (`script-src 'self' https://apis.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`), `X-Content-Type-Options` y `Referrer-Policy`. | En Chromium la app carga sin errores y bloquea un `onerror` inyectado. **Falta probar el inicio de sesión con Google en el despliegue real.** |
+| F6 | Sin cambios: solo afecta a desarrollo. | — |
+
 ## Resumen de hallazgos
 
 | ID | Severidad | Hallazgo | Ubicación | Verificado |

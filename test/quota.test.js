@@ -54,11 +54,17 @@ test('devolver el intento cuando la IA falla', async () => {
   assert.equal((await takeQuota('ana', 'generate', opts)).ok, true);
 });
 
-test('sin contadores configurados no limita; si el servicio falla, deja pasar', async () => {
+test('sin contadores configurados no limita; si el servicio falla, deja pasar salvo en planes nuevos', async () => {
   assert.equal((await takeQuota('ana', 'generate', { env: {} })).ok, true);
   const rota = async () => ({ ok: false, status: 500, json: async () => ({}) });
   const origErr = console.error; console.error = () => {};
-  try { assert.equal((await takeQuota('ana', 'generate', { env: ENV, fetchImpl: rota })).ok, true); } finally { console.error = origErr; }
+  try {
+    assert.equal((await takeQuota('ana', 'chat', { env: ENV, fetchImpl: rota })).ok, true);
+    // Los planes nuevos (lo más caro) no se abren si no se puede contar.
+    const g = await takeQuota('ana', 'generate', { env: ENV, fetchImpl: rota });
+    assert.equal(g.ok, false);
+    assert.equal(g.unavailable, true);
+  } finally { console.error = origErr; }
 });
 
 test('el servidor responde 429 con mensaje en el idioma cuando se pasa la cuota', async () => {

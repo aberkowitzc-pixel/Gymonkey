@@ -74,8 +74,11 @@ function migrate(s) {
   s.profile ??= null;
   s.plan ??= null;
   s.chat ??= [];
-  s.moves ??= [];
-  s.adjust ??= [];
+  // Movimientos y ajustes llegan también de copias importadas y de la nube: se validan antes de pintarlos.
+  const isISO = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  s.moves = (Array.isArray(s.moves) ? s.moves : []).filter((m) => m && typeof m.name === 'string' && isISO(m.from) && (m.to == null || isISO(m.to)));
+  s.adjust = (Array.isArray(s.adjust) ? s.adjust : []).filter((x) => x && isISO(x.week) && isISO(x.date))
+    .map((x) => ({ ...x, sets: Math.max(0, Math.round(Number(x.sets)) || 0) }));
   s.meta = { deletedWorkouts: [], ...(s.meta || {}) };
   dedupeLibrary(s);
   pruneSchedule(s);
@@ -1312,7 +1315,7 @@ const actions = {
         const t = r.targets?.[id];
         return `<li>${esc(exDisp(id))}${t ? ` <span class="muted" dir="ltr">${t.sets}×${esc(t.reps)}</span>` : ''}</li>`;
       }).join('');
-      const adj = adjustmentsFor(state, r.name, day.date.getTime()).map((x) => `<li class="muted">＋ ${x.kind === 'add_sets' ? tn(x.sets, '{n} serie de {name}', '{n} series de {name}', { name: esc(exLabel(x.exercise)) }) : `${esc(exLabel(x.exercise))} ${x.sets}×${esc(x.reps)}`}</li>`).join('');
+      const adj = adjustmentsFor(state, r.name, day.date.getTime()).map((x) => `<li class="muted">＋ ${x.kind === 'add_sets' ? tn(x.sets, '{n} serie de {name}', '{n} series de {name}', { name: esc(exLabel(x.exercise)) }) : `${esc(exLabel(x.exercise))} ${esc(x.sets)}×${esc(x.reps)}`}</li>`).join('');
       const note = day.workout
         ? `<p class="muted">${day.status === 'partial' ? `◐ ${t('Sesión parcial')}` : `✓ ${t('Hecho')}`}${day.doneOn ? ` · ${t('el {date}', { date: fmtDate(day.workout.start) })}` : ''}</p>`
         : day.movedFrom ? `<p class="muted">↪ ${t('Movida desde el {day}', { day: dayLabel(calCell(day.movedFrom) || { weekday: day.movedFrom, date: new Date() }) })}</p>` : '';
@@ -1342,7 +1345,7 @@ const actions = {
       const dest = day.movedTo ? calCell(day.movedTo) : null;
       openDialog(`
         <h2>${title} · ${esc(rName(mv?.name || t('Sesión')))}</h2>
-        <p class="muted">${day.status === 'skipped' ? `⏭ ${t('Sesión saltada')}` : `↪ ${t('Movida al {day}', { day: dest ? dayLabel(dest) : day.movedTo })}`}</p>
+        <p class="muted">${day.status === 'skipped' ? `⏭ ${t('Sesión saltada')}` : `↪ ${t('Movida al {day}', { day: dest ? dayLabel(dest) : esc(day.movedTo) })}`}</p>
         <div class="stack" style="margin-top:12px">
           <button class="block primary" value="restore">${day.status === 'skipped' ? t('Recuperar la sesión') : t('Volver a este día')}</button>
           <button class="block ghost" value="cancel" formnovalidate>${t('Cerrar')}</button>

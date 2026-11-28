@@ -110,3 +110,33 @@ test('si el cliente corta la conexión, se cancela la generación', async () => 
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(aborted, true);
 });
+
+test('las respuestas ya generadas (cortadas, rechazadas o con formato raro) no devuelven la cuota', async () => {
+  for (const final of [{ stop_reason: 'max_tokens' }, { stop_reason: 'refusal' }, { stop_reason: 'end_turn' }]) {
+    let refunds = 0;
+    const quota = async () => ({ ok: true, limit: 2, used: 1, refund: async () => { refunds++; } });
+    const res = await handlePlanRequest(req({ mode: 'questions', input: { profile } }), { client: fakeClient({ final }), quota });
+    assert.equal((await readLines(res)).at(-1).type, 'error');
+    assert.equal(refunds, 0, final.stop_reason);
+  }
+  // Un fallo de la IA antes de responder sí la devuelve.
+  let refunds = 0;
+  const quota = async () => ({ ok: true, limit: 2, used: 1, refund: async () => { refunds++; } });
+  const err = new Anthropic.RateLimitError(429, { error: { message: 'x' } }, 'x', new Headers());
+  await readLines(await handlePlanRequest(req({ mode: 'questions', input: { profile } }), { client: fakeClient({ fail: err }), quota }));
+  assert.equal(refunds, 1);
+});
+
+test('si no se puede contar la cuota de una tarea cara, responde 503', async () => {
+  const quota = async () => ({ ok: false, unavailable: true, limit: 2, used: 0, refund: async () => {} });
+  const res = await handlePlanRequest(req({ mode: 'generate', input: { profile } }), { client: fakeClient({}), quota });
+  assert.equal(res.status, 503);
+});
+
+test('ALLOW_ANONYMOUS no abre la IA en producción', async () => {
+  process.env.VERCEL_ENV = 'production';
+  try {
+    const res = await handlePlanRequest(req({ mode: 'generate', input: { profile } }), { client: fakeClient({}) });
+    assert.equal(res.status, 500);
+  } finally { delete process.env.VERCEL_ENV; }
+});
