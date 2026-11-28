@@ -15,6 +15,7 @@ import { matchExercise, mergeExercises, findDuplicates, dedupeLibrary } from './
 import { t, tn, T, E, tData, getLang, setLang, LANGS, detectLang, fmtNum, fwd, dayShort, dayLetter, exLabel, canonicalExercise, fmtDateShort, fmtTime, isRTL, locale } from './i18n.js';
 import { ic } from './icons.js';
 import { buildEvent, upsertEvent, deleteEvent, eventIdFor } from './gcal.js';
+import { suggestSession, freeDays } from './suggest.js';
 import { initSessions, viewSessions, sessionsActive, sessionsBusy, sessionsTick, sessionsLeave, sessionsActions, onSessionsInput, onSessionsChange, onSessionsFile } from './sessions.js';
 
 const STORAGE_KEY = 'gymonkey:v1';
@@ -64,6 +65,7 @@ function defaultState() {
     moves: [],
     adjust: [],
     schedule: [],
+    extras: [],
     weekTimes: null,
     gcalQueue: [],
     meta: { deletedWorkouts: [] },
@@ -82,6 +84,8 @@ function migrate(s) {
   s.adjust ??= [];
   s.schedule ??= [];
   s.weekTimes ??= null;
+  // Las sesiones extra de hace más de dos meses ya no hacen falta (los entrenos hechos quedan en el historial).
+  s.extras = (s.extras || []).filter((x) => x.iso >= isoLocal(Date.now() - 60 * 864e5));
   s.schedule.forEach((x) => { if (x.gcal === undefined) x.gcal = !!x.eventId; });
   s.gcalQueue ??= [];
   s.meta = { deletedWorkouts: [], ...(s.meta || {}) };
@@ -595,7 +599,7 @@ function suggestHTML(sg, exerciseId) {
 const emptyState = (icon, title, text, actions = '') => `<div class="empty">${ic(icon)}<h3>${title}</h3>${text ? `<p>${text}</p>` : ''}${actions ? `<div class="row">${actions}</div>` : ''}</div>`;
 
 /** Hoy + esta semana y la próxima: qué toca, qué hiciste y qué falta. */
-const calWeeks = (weeks = 2) => buildWeeks({ now: Date.now(), routines: state.routines, workouts: state.workouts, moves: state.moves, weeks });
+const calWeeks = (weeks = 2) => buildWeeks({ now: Date.now(), routines: state.routines, workouts: state.workouts, moves: state.moves, extras: state.extras || [], weeks });
 /** Semanas que muestra el calendario: de esta hasta el final del mesociclo en curso (mínimo dos). */
 function calSpan() {
   const wi = state.plan?.startDate ? weekInfo(state.plan) : null;
@@ -933,6 +937,121 @@ function scheduleDialog(cell) {
   });
 }
 
+/* ---------- sesiones extra (fuera del plan) ---------- */
+// state.extras: [{ id, iso, name, exerciseIds, targets, extra: true }] — una sesión en un día sin sesión del plan.
+
+const focusLabel = (f) => ({ gap: t('Lo que menos has trabajado esta semana'), torso: t('Torso'), pierna: t('Pierna'), full: t('Cuerpo completo') }[f]);
+const targetText = (id, tg) => (tg ? `${tg.sets}×${tg.reps}${isTimed(id) ? ' s' : ''}${tg.rir !== undefined && tg.rir !== '' ? ` · RIR ${tg.rir}` : ''}` : '');
+
+/** Objetivo de un ejercicio elegido a mano: el del plan si está en él; si no, uno estándar. */
+function targetFor(id) {
+  for (const r of state.routines) if (r.targets?.[id]) return { ...r.targets[id] };
+  return isTimed(id) ? { sets: 3, reps: '30-45', rir: 2 } : { sets: 3, reps: '8-12', rir: 2 };
+}
+
+/** Nueva sesión: elegir el día (hoy o uno libre de las próximas dos semanas) y qué tipo de sesión. */
+function newSessionDialog(iso) {
+  const today = isoLocal(Date.now());
+  const days = freeDays(calWeeks(Math.max(3, calSpan())), today, 14);
+  if (!days.length) { toast(t('No hay días libres en las próximas dos semanas')); return; }
+  const sel = days.some((d) => d.iso === iso) ? iso : days[0].iso;
+  const plan = state.routines.filter((r) => r.fromPlan && r.exerciseIds.some(exById));
+  const radio = (value, label, sub = '', checked = false) => `<label><input type="radio" name="kind" value="${value}" ${checked ? 'checked' : ''}><span>${label}${sub ? ` <span class="muted">· ${sub}</span>` : ''}</span></label>`;
+  openDialog(`
+    <h2>${t('Nueva sesión')}</h2>
+    <label class="field">${t('Día')}<select name="day">${days.map((d) => `<option value="${d.iso}" ${d.iso === sel ? 'selected' : ''}>${t(d.weekday)} ${d.date.getDate()}${d.iso === today ? ` · ${t('hoy')}` : ''}</option>`).join('')}</select></label>
+    <p class="muted" style="margin-top:12px;font-size:var(--fs-sm)">${t('¿Qué quieres entrenar? Te propongo los ejercicios y los puedes ajustar.')}</p>
+    <div class="pick-list">
+      <small class="muted">${t('Sugerida')}</small>
+      ${radio('gap', focusLabel('gap'), t('según tu plan y lo que ya hiciste'), true)}
+      ${radio('torso', focusLabel('torso'))}
+      ${radio('pierna', focusLabel('pierna'))}
+      ${radio('full', focusLabel('full'))}
+      ${plan.length ? `<small class="muted">${t('Repetir una sesión de tu plan')}</small>${plan.map((r) => radio(`r:${r.id}`, esc(rName(r.name)), tn(r.exerciseIds.filter(exById).length, '{n} ejercicio', '{n} ejercicios'))).join('')}` : ''}
+      <small class="muted">${t('A tu manera')}</small>
+      ${radio('pick', t('Elijo yo los ejercicios'))}
+      ${radio('empty', t('Vacía: añado los ejercicios sobre la marcha'), t('solo hoy'))}
+    </div>
+    ${dialogButtons(t('Siguiente'))}`,
+  (fd) => {
+    const day = String(fd.get('day'));
+    const kind = String(fd.get('kind') || 'gap');
+    if (kind === 'empty') {
+      if (day !== today) { toast(t('Una sesión vacía solo se puede empezar hoy')); return false; }
+      actions.start(); tab = 'train'; commit();
+      return;
+    }
+    if (kind === 'pick') {
+      pickExercisesDialog({
+        title: t('Elige los ejercicios'), confirm: t('Siguiente'),
+        onDone: (ids) => { if (ids.length) sessionPreview(day, `${t('Sesión')} (${t('extra')})`, ids.map((id) => ({ exerciseId: id, target: targetFor(id) }))); },
+      });
+      return;
+    }
+    if (kind.startsWith('r:')) {
+      const r = state.routines.find((x) => x.id === kind.slice(2));
+      if (!r) return false;
+      sessionPreview(day, `${rName(r.name)} (${t('extra')})`, r.exerciseIds.filter(exById).map((id) => ({ exerciseId: id, target: r.targets?.[id] ? { ...r.targets[id] } : targetFor(id) })));
+      return;
+    }
+    const items = suggestSession({ focus: kind, routines: state.routines, workouts: state.workouts, exercises: state.exercises, now: Date.now() });
+    if (!items.length) { toast(t('No encontré ejercicios para sugerir: añade algunos en Rutinas')); return false; }
+    sessionPreview(day, `${kind === 'gap' ? t('Complemento') : focusLabel(kind)} (${t('extra')})`, items, kind === 'gap');
+  });
+}
+
+/** Ejercicios propuestos (se pueden desmarcar) y empezar ya o dejarla programada. */
+function sessionPreview(iso, name, items, gap = false) {
+  const today = isoLocal(Date.now());
+  const cell = calCell(iso) || calWeeks(Math.max(3, calSpan())).flatMap((w) => w.days).find((d) => d.iso === iso);
+  const muscles = [...new Set(items.map((x) => exById(x.exerciseId)?.muscle).filter(Boolean))].map(mLabel).join(' · ');
+  openDialog(`
+    <h2>${esc(name)}</h2>
+    <p class="muted">${cell ? `${t(cell.weekday)} ${cell.date.getDate()}${iso === today ? ` · ${t('hoy')}` : ''}` : iso}${gap && muscles ? ` · ${t('Para completar: {m}', { m: esc(muscles) })}` : ''}</p>
+    <div class="pick-list">
+      ${items.map((x) => `<label><input type="checkbox" name="ex" value="${x.exerciseId}" checked><span>${esc(exDisp(x.exerciseId))} <span class="muted" dir="ltr">· ${esc(targetText(x.exerciseId, x.target))}</span></span></label>`).join('')}
+    </div>
+    <p class="muted" style="font-size:var(--fs-sm)">${t('Puedes añadir, quitar o reordenar ejercicios durante el entreno.')}</p>
+    <div class="stack" style="margin-top:12px">
+      ${iso === today ? `<button class="block primary" value="start">${t('Empezar ahora')}</button>` : ''}
+      <button class="block ${iso === today ? '' : 'primary'}" value="plan">${ic('calendar')} ${iso === today ? t('Dejarla programada para hoy') : t('Programar')}</button>
+      <button class="block ghost" value="cancel" formnovalidate>${t('Cancelar')}</button>
+    </div>`,
+  (fd, _f, value) => {
+    const ids = fd.getAll('ex');
+    if (!ids.length) { toast(t('Elige al menos un ejercicio')); return false; }
+    const targets = {};
+    items.forEach((x) => { if (ids.includes(x.exerciseId)) targets[x.exerciseId] = x.target; });
+    const extra = { id: `x-${uid()}`, iso, name, exerciseIds: ids, targets, extra: true };
+    state.extras.push(extra);
+    if (value === 'start') { actions.start(extra.id); tab = 'train'; commit(); window.scrollTo(0, 0); return; }
+    commit();
+    toast(t('Sesión programada para el {day}', { day: cell ? dayLabel(cell) : iso }));
+  });
+}
+
+/** Cambiar de día una sesión extra (su hora y su evento la acompañan). */
+function moveExtraDialog(cell) {
+  const today = isoLocal(Date.now());
+  const days = freeDays(calWeeks(Math.max(3, calSpan())), today, 14);
+  if (!days.length) { toast(t('No hay días libres en las próximas dos semanas')); return; }
+  openDialog(`
+    <h2>${t('Mover {name}', { name: esc(rName(cell.routine.name)) })}</h2>
+    <div class="pick-list">${days.map((d) => `<label><input type="radio" name="to" value="${d.iso}" required><span>${t(d.weekday)} ${d.date.getDate()}${d.iso === today ? ` · ${t('hoy')}` : ''}</span></label>`).join('')}</div>
+    ${dialogButtons(t('Mover'))}`,
+  (fd) => {
+    const to = String(fd.get('to') || '');
+    const x = state.extras.find((e) => e.id === cell.routine.id);
+    if (!to || !x) return false;
+    const sch = scheduleAt(x.iso);
+    x.iso = to;
+    if (sch) { sch.iso = to; sch.auto = false; if (sch.eventId || sch.gcal) syncEvent(sch); }
+    commit();
+    const dest = calCell(to);
+    toast(t('Movida al {day}', { day: dest ? dayLabel(dest) : to }));
+  });
+}
+
 function skipSession(cell) {
   ask(t('¿Saltar «{name}» ({day})? Seguirás con el plan sin recuperarla.', { name: rName(cell.routine.name), day: dayLabel(cell) }), t('Saltar'), () => { setMove(state, cell, null, calCell); commit(); });
 }
@@ -962,7 +1081,7 @@ function viewCalendar() {
   const sym = { done: '✓', partial: '◐', missed: '–', planned: '', extra: '•', rest: '', moved: '↪', skipped: '⏭' };
   const cell = (d) => {
     const label = d.routine ? shortName(rName(d.routine.name)) : d.status === 'extra' ? shortName(rName(d.extra.name)) : d.status === 'moved' ? `${fwd()} ${Number(d.movedTo.slice(8))}` : d.status === 'skipped' ? t('saltada') : '';
-    const click = d.routine || d.extra || d.status === 'moved' || d.status === 'skipped';
+    const click = d.routine || d.extra || d.status === 'moved' || d.status === 'skipped' || (d.status === 'rest' && !d.isPast);
     return `<button class="cal-day ${d.status} ${d.isToday ? 'today' : ''}" ${click ? `data-action="cal-day" data-iso="${d.iso}"` : 'disabled'} aria-label="${t(d.weekday)} ${d.date.getDate()}${label ? `, ${esc(label)}` : ''}">
       <small>${dayLetter(d.idx)}</small><b>${d.date.getDate()}</b><i${d.status === 'planned' && timeAt(d.iso) ? ' class="tm"' : ''}>${d.status === 'planned' && timeAt(d.iso) ? timeAt(d.iso).time : d.movedFrom && d.status === 'planned' ? '↪' : sym[d.status]}</i><em>${esc(label)}</em></button>`;
   };
@@ -997,7 +1116,7 @@ function viewTrain() {
       ${missing ? loadsBanner(missing) : ''}
       ${cal}
       <div class="actions2">
-        <button class="primary" data-action="start">+ ${t('Entreno vacío')}</button>
+        <button class="primary" data-action="new-session">+ ${t('Nueva sesión')}</button>
         <button data-action="voice-open">${ic('mic')} ${t('Dictar')}</button>
       </div>
       ${cal ? (routines ? `<details class="how"><summary>${t('Todas las rutinas')}</summary>${routines}</details>` : '') : (routines || emptyState('coach', t('Aún no tienes rutinas'), t('Crea tu plan con el coach y tus rutinas aparecerán aquí.'), `<button class="primary" data-action="go-plan">${t('Crear mi plan')}</button><button data-action="start">+ ${t('Entreno vacío')}</button>`))}
@@ -1417,7 +1536,7 @@ function mergeDialog(ex) {
 
 const actions = {
   start(id) {
-    const r = state.routines.find((x) => x.id === id);
+    const r = state.routines.find((x) => x.id === id) || (state.extras || []).find((x) => x.id === id);
     state.active = {
       name: r ? r.name : T('Entreno libre'),
       routineId: r?.id,
@@ -1621,7 +1740,8 @@ const actions = {
           <button class="block primary" value="start">${day.workout ? t('Hacerlo otra vez') : day.status === 'missed' ? t('Hacerlo ahora') : t('Empezar')}</button>
           ${day.status === 'partial' && day.workout?.skipped?.length ? `<button class="block" value="rest">${t('Hacer lo que faltó')}</button>` : ''}
           ${canMove && !day.isPast ? `<button class="block" value="time">${ic('clock')} ${timeAt(day.iso) ? t('A las {time} · cambiar', { time: timeAt(day.iso).time }) : t('Poner hora')}</button>` : ''}
-          ${canMove ? `<button class="block" value="move">${ic('calendar')} ${t('Mover a otro día')}</button><button class="block" value="skip">${t('Saltar esta sesión')}</button>` : ''}
+          ${canMove && r.extra ? `<button class="block" value="xmove">${ic('calendar')} ${t('Mover a otro día')}</button><button class="block ghost danger" value="xdel">${t('Quitar esta sesión')}</button>` : ''}
+          ${canMove && !r.extra ? `<button class="block" value="move">${ic('calendar')} ${t('Mover a otro día')}</button><button class="block" value="skip">${t('Saltar esta sesión')}</button>` : ''}
           ${day.movedFrom && !day.workout ? `<button class="block ghost" value="back">${t('Volver a su día')}</button>` : ''}
           ${day.workout ? `<button class="block" value="history">${t('Ver en historial')}</button>` : ''}
           <button class="block ghost" value="cancel" formnovalidate>${t('Cerrar')}</button>
@@ -1631,6 +1751,8 @@ const actions = {
         else if (value === 'rest') { actions['start-rest'](day.workout.id); commit(); }
         else if (value === 'time') scheduleDialog(day);
         else if (value === 'move') moveDialog(day);
+        else if (value === 'xmove') moveExtraDialog(day);
+        else if (value === 'xdel') ask(t('¿Quitar «{name}» del {day}?', { name: rName(r.name), day: dayLabel(day) }), t('Quitar'), () => { state.extras = state.extras.filter((x) => x.id !== r.id); commit(); });
         else if (value === 'skip') skipSession(day);
         else if (value === 'back') { setMove(state, day, day.movedFrom, calCell); commit(); }
         else if (value === 'history') { tab = 'history'; render(); window.scrollTo(0, 0); }
@@ -1655,11 +1777,14 @@ const actions = {
           <button class="block ghost" value="cancel" formnovalidate>${t('Cerrar')}</button>
         </div>`,
       () => { tab = 'history'; render(); window.scrollTo(0, 0); });
+    } else if (day.status === 'rest' && !day.isPast) {
+      newSessionDialog(day.iso);
     }
     return false;
   },
   'gcal-sync'() { flushCalendar(true); return false; },
   'week-times'() { weekTimesDialog(); return false; },
+  'new-session'() { newSessionDialog(isoLocal(Date.now())); return false; },
   'cal-move'(_, el) { const c = calCell(el.dataset.iso); if (c?.routine) moveDialog(c); return false; },
   'cal-skip'(_, el) { const c = calCell(el.dataset.iso); if (c?.routine) skipSession(c); return false; },
   // ---- unir ejercicios duplicados
