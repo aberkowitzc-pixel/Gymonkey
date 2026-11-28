@@ -82,6 +82,8 @@ En Entrenar, al tocar una sesión del plan → **Poner hora**, la app puede crea
 3. **APIs y servicios → Pantalla de consentimiento de OAuth** (o *Google Auth Platform*) → **Acceso a los datos / Permisos** → **Agregar permisos** → marca `.../auth/calendar.events` → **Guardar**.
 4. Mientras la app esté en modo **Prueba**, añade en **Público → Usuarios de prueba** los correos que la vayan a usar. Google mostrará el aviso «Google no ha verificado esta aplicación»: toca *Continuar*. Para quitar el aviso a todo el mundo hay que pasar la verificación de Google (el permiso de calendario es «sensible»).
 
+**Enlaces para la pantalla de consentimiento** (Google los pide para verificar la app): en <https://console.cloud.google.com/auth/branding?project=gymonkey> usa como página principal `https://gymonkey.vercel.app`, como política de privacidad `https://gymonkey.vercel.app/legal#privacy` y como condiciones del servicio `https://gymonkey.vercel.app/legal#terms`. El correo de contacto de la página legal se configura en `CONTACT_EMAIL` (archivo `site.js`).
+
 El permiso de calendario se pide la primera vez que guardas una hora con la casilla marcada (una ventana de Google). El token dura una hora: pasado ese tiempo, al guardar otra hora la ventana se abre y se cierra sola; si algún cambio queda pendiente, aparece un botón **Actualizar** en el calendario de Entrenar.
 
 ### Acceso abierto con cuota por persona

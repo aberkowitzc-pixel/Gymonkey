@@ -663,4 +663,5 @@ export default {
   "Quitar esta sesión": "Remove this session",
   "¿Quitar «{name}» del {day}?": "Remove “{name}” from {day}?",
   "Quitar": "Remove",
+  "Términos y privacidad": "Terms and privacy",
 };

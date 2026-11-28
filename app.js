@@ -1826,6 +1826,7 @@ const actions = {
       ${sw('notify', t('Notificaciones'), t('Aviso al terminar el descanso'), canNotify)}
       ${sw('sound', t('Sonido y vibración'), '')}
       ${sw('wakeLock', t('Pantalla siempre encendida'), t('Durante el entreno'), canWake)}
+      <p class="muted" style="margin-top:12px"><a href="legal?lang=${getLang()}" target="_blank" rel="noopener">${t('Términos y privacidad')}</a></p>
       ${dialogButtons(t('Guardar'))}`,
     (fd) => {
       const newLang = fd.get('lang');
@@ -2184,7 +2185,10 @@ function toast(msg) {
 
 /** Aplica el idioma elegido (o el del navegador) a toda la app: textos fijos, dirección y vistas. */
 function applyLang() {
-  setLang(state.settings.lang || detectLang());
+  // Sin idioma elegido en la app: el que se eligió en la página de inicio o el del navegador.
+  let siteLang = null;
+  try { siteLang = localStorage.getItem('gymonkey:lang'); } catch (_) { /* ignorar */ }
+  setLang(state.settings.lang || (LANGS[siteLang] ? siteLang : detectLang()));
   applyStatic();
   applyTheme();
 }

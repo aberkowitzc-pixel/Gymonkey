@@ -2,6 +2,8 @@
 
 App web (PWA) para registrar tus entrenamientos en el gimnasio, con un **entrenador IA** que diseña y ajusta tu plan. Funciona en el móvil, se instala en la pantalla de inicio y el registro de entrenos funciona sin conexión.
 
+La dirección principal muestra una **página de inicio** (en español, inglés y hebreo) con las funciones, los términos y la privacidad, y los botones para crear cuenta o iniciar sesión con Google; la app está en `/app`. La app instalada en el móvil abre directamente la app.
+
 👉 **Para ponerla en marcha (cuentas, IA y publicación) sigue [SETUP.md](SETUP.md).**
 
 ## Qué puedes hacer
@@ -48,13 +50,17 @@ npx vercel dev      # web + servidor de IA (necesita las variables de entorno de
 npm test            # pruebas del servidor de IA (no llaman a la API)
 ```
 
-Solo la parte sin IA: `python3 -m http.server 8000` y abre http://localhost:8000.
+Solo la parte sin IA: `python3 -m http.server 8000` y abre http://localhost:8000 (inicio) o http://localhost:8000/app.html (la app; en Vercel es `/app`).
 
 ## Archivos
 
 | Archivo | Para qué sirve |
 |---|---|
-| `index.html` | Estructura de la página y barra de pestañas |
+| `index.html`, `landing.js`, `landing.css` | Página de inicio (gymonkey.vercel.app): qué hace la app, crear cuenta e iniciar sesión con Google |
+| `legal.html`, `legal.js` | Términos y condiciones y política de privacidad (`/legal`) |
+| `site.js` | Textos de la página de inicio y de la legal en español, inglés y hebreo |
+| `app.html` | La app (`/app`): estructura de la página y barra de pestañas |
+| `tokens.css` | Colores y tipografías comunes a la app y a la página de inicio |
 | `styles.css` | Estilos (modo claro y oscuro automático) |
 | `app.js` | Lógica principal: datos, vistas, temporizadores y sincronización |
 | `plan.js` | Plan con IA: cuestionario, mesociclos, edición y ajustes |

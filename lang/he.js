@@ -663,4 +663,5 @@ export default {
   "Quitar esta sesión": "הסר את האימון הזה",
   "¿Quitar «{name}» del {day}?": "להסיר את „{name}” מ-{day}?",
   "Quitar": "הסר",
+  "Términos y privacidad": "תנאים ופרטיות",
 };
