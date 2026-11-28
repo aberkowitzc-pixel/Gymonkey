@@ -664,4 +664,7 @@ export default {
   "¿Quitar «{name}» del {day}?": "להסיר את „{name}” מ-{day}?",
   "Quitar": "הסר",
   "Términos y privacidad": "תנאים ופרטיות",
+  "Semana {w} de {total} · {name}": "שבוע {w} מתוך {total} · {name}",
+  "Semana {w} de {total} del plan": "שבוע {w} מתוך {total} בתוכנית",
+  "{name} · semana {n} de {of}": "{name} · שבוע {n} מתוך {of}",
 };
