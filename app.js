@@ -8,12 +8,13 @@ import * as cloud from './cloud.js';
 import { initPlan, viewPlan, planActions, onPlanSubmit, onPlanInput, onContextFile, onContextInput, onChatInput, planTick, planTrainBanner, planBusy, planResume, planWeekLabel, weekInfo, todayName, WEEKDAYS } from './plan.js';
 import { suggestLoad, suggestedReps, inferRange, parseRange, knownLoads } from './progression.js';
 import { initLoads, viewLoads, loadsActive, loadsBusy, loadsTick, loadsLeave, loadsActions, onLoadsInput } from './loads.js';
-import { buildWeeks, shortName, isoLocal } from './calendar.js';
+import { buildWeeks, shortName, isoLocal, mondayOf } from './calendar.js';
 import { buildWeekContext, hasDeficit, moveOptions, setMove, adjustmentsFor, pruneSchedule } from './weekplan.js';
 import { initWeek, viewWeek, weekActive, weekBusy, weekTick, weekLeave, weekActions, onWeekChange } from './week.js';
 import { matchExercise, mergeExercises, findDuplicates, dedupeLibrary } from './exercises.js';
 import { t, tn, T, E, tData, getLang, setLang, LANGS, detectLang, fmtNum, fwd, dayShort, dayLetter, exLabel, canonicalExercise, fmtDateShort, fmtTime, isRTL, locale } from './i18n.js';
 import { ic } from './icons.js';
+import { buildEvent, upsertEvent, deleteEvent } from './gcal.js';
 import { initSessions, viewSessions, sessionsActive, sessionsBusy, sessionsTick, sessionsLeave, sessionsActions, onSessionsInput, onSessionsChange, onSessionsFile } from './sessions.js';
 
 const STORAGE_KEY = 'gymonkey:v1';
@@ -62,6 +63,8 @@ function defaultState() {
     chat: [],
     moves: [],
     adjust: [],
+    schedule: [],
+    gcalQueue: [],
     meta: { deletedWorkouts: [] },
   };
 }
@@ -76,6 +79,8 @@ function migrate(s) {
   s.chat ??= [];
   s.moves ??= [];
   s.adjust ??= [];
+  s.schedule ??= [];
+  s.gcalQueue ??= [];
   s.meta = { deletedWorkouts: [], ...(s.meta || {}) };
   dedupeLibrary(s);
   pruneSchedule(s);
@@ -667,6 +672,158 @@ function moveDialog(cell) {
   });
 }
 
+/* ---------- hora de las sesiones y Google Calendar ---------- */
+// state.schedule: [{ iso, name, time: 'HH:MM', minutes, eventId }] — la hora prevista de una sesión del plan ese día.
+// state.gcalQueue: cambios pendientes de llevar al calendario de Google ({ op: 'upsert', iso } | { op: 'delete', eventId }).
+
+const scheduleAt = (iso) => (state.schedule || []).find((x) => x.iso === iso) || null;
+const lastSchedule = () => (state.schedule || []).reduce((a, x) => (!a || x.iso > a.iso ? x : a), null);
+
+/** Resumen de la sesión para las notas del evento: un ejercicio por línea con series, reps, RIR y carga. */
+function sessionLines(cell) {
+  const r = cell.routine;
+  const deload = !!(r.fromPlan && planWeekLabel(cell.date.getTime())?.deload);
+  const lines = r.exerciseIds.filter(exById).map((id) => {
+    const tg = r.targets?.[id];
+    const timed = isTimed(id);
+    let kg = 0;
+    try { kg = num(newEntry(id, tg, { deload }).sets[0]?.w); } catch (_) { /* sin sugerencia */ }
+    const sets = tg ? (deload ? Math.max(1, Math.ceil(tg.sets / 2)) : tg.sets) : 0;
+    const parts = [tg ? `${sets}×${tg.reps}${timed ? ' s' : ''}` : '', tg?.rir !== undefined && tg?.rir !== '' ? `RIR ${tg.rir}` : '', kg ? `${fmtKg(kg)} ${t('kg')}` : ''].filter(Boolean);
+    return `${exDisp(id)}${parts.length ? ` — ${parts.join(' · ')}` : ''}`;
+  });
+  adjustmentsFor(state, r.name, cell.date.getTime()).forEach((x) => lines.push(`+ ${x.kind === 'add_sets' ? tn(x.sets, '{n} serie de {name}', '{n} series de {name}', { name: exLabel(x.exercise) }) : `${exLabel(x.exercise)} ${x.sets}×${x.reps}`}`));
+  return { lines, deload };
+}
+
+function eventFor(entry) {
+  const cell = calCell(entry.iso);
+  if (!cell?.routine) return null;
+  const { lines, deload } = sessionLines(cell);
+  const wl = planWeekLabel(cell.date.getTime());
+  const note = [wl?.text, deload ? t('Semana de descarga') : ''].filter(Boolean).join(' · ');
+  return buildEvent({
+    iso: entry.iso, time: entry.time, minutes: entry.minutes, title: `🏋️ ${rName(cell.routine.name)}`, lines, note,
+    appUrl: location.origin + location.pathname, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
+}
+
+function queueCal(op) {
+  if (!op.eventId && op.op === 'delete') return;
+  const q = state.gcalQueue;
+  if (op.op === 'upsert' && q.some((x) => x.op === 'upsert' && x.iso === op.iso)) return;
+  q.push(op);
+}
+
+/**
+ * Si una sesión con hora cambió de día (movida, intercambiada o de vuelta a su día), la hora y el evento la acompañan;
+ * si ya no está en el calendario, el evento se borra.
+ */
+function reconcileSchedule() {
+  if (!state.schedule?.length) return;
+  const today = isoLocal(Date.now());
+  // Las horas de hace más de un mes ya no hacen falta (los eventos se quedan en el calendario).
+  const old = isoLocal(Date.now() - 30 * 864e5);
+  if (state.schedule.some((x) => x.iso < old)) state.schedule = state.schedule.filter((x) => x.iso >= old);
+  const days = calWeeks(calSpan()).flatMap((w) => w.days);
+  const last = days[days.length - 1].iso;
+  const stale = state.schedule.filter((x) => x.iso >= today && x.iso <= last && days.find((d) => d.iso === x.iso)?.routine?.name !== x.name);
+  if (!stale.length) return;
+  const taken = new Set(state.schedule.filter((x) => !stale.includes(x)).map((x) => x.iso));
+  const week = (iso) => isoLocal(mondayOf(new Date(`${iso}T12:00:00`)));
+  for (const x of stale) {
+    const free = days.filter((d) => d.routine?.name === x.name && !d.workout && d.iso >= today && !taken.has(d.iso));
+    const dest = free.find((d) => d.movedFrom === x.iso) || free.find((d) => week(d.iso) === week(x.iso));
+    if (dest) { x.iso = dest.iso; taken.add(dest.iso); queueCal({ op: 'upsert', iso: x.iso }); }
+    else { state.schedule = state.schedule.filter((y) => y !== x); queueCal({ op: 'delete', eventId: x.eventId }); }
+  }
+}
+
+let calFlushing = false;
+/** Lleva al calendario de Google los cambios pendientes. Sin `interactive`, solo si ya hay un permiso vigente. */
+async function flushCalendar(interactive = false) {
+  if (calFlushing || !state.gcalQueue?.length || !cloud.currentUser()) return;
+  calFlushing = true;
+  try {
+    const token = await cloud.calendarToken({ interactive });
+    if (!token) return;
+    while (state.gcalQueue.length) {
+      const op = state.gcalQueue[0];
+      if (op.op === 'delete') await deleteEvent(token, op.eventId);
+      else {
+        const entry = scheduleAt(op.iso);
+        const ev = entry && eventFor(entry);
+        if (ev) entry.eventId = (await upsertEvent(token, entry.eventId, ev)).id;
+      }
+      state.gcalQueue.shift();
+    }
+    save();
+    if (interactive) toast(t('Calendario de Google actualizado'));
+  } catch (e) {
+    console.error(e);
+    if (e.status === 401 || e.status === 403) cloud.dropCalendarToken();
+    if (interactive) toast(calError(e));
+  } finally {
+    calFlushing = false;
+    render();
+  }
+}
+
+function calError(e) {
+  if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return t('No se dio permiso para el calendario');
+  if (e.code === 'auth/popup-blocked') return t('El navegador bloqueó la ventana de Google: permite las ventanas emergentes e inténtalo de nuevo');
+  if (e.code === 'auth/user-mismatch') return t('Elige la misma cuenta de Google con la que entraste en Gymonkey');
+  if (e.status === 403) return t('Google no dio acceso al calendario: revisa que la API de Calendar esté activada (SETUP.md)');
+  return t('No se pudo actualizar el calendario: {msg}', { msg: e.message });
+}
+
+/** Elegir la hora de una sesión del plan y, si quieres, crear el evento en Google Calendar. */
+function scheduleDialog(cell) {
+  const cur = scheduleAt(cell.iso);
+  const prev = cur || lastSchedule();
+  const time = prev?.time || '19:00';
+  const minutes = prev?.minutes || 60;
+  const signed = !!cloud.currentUser();
+  const gcal = cur ? !!cur.eventId || state.gcalQueue.some((x) => x.iso === cell.iso) : signed && state.settings.gcal !== false;
+  const durs = [30, 45, 60, 75, 90, 120];
+  openDialog(`
+    <h2>${ic('clock')} ${esc(rName(cell.routine.name))} · ${dayLabel(cell)}</h2>
+    <div class="row" style="margin-top:12px">
+      <label class="field" style="flex:1">${t('Hora')}<input type="time" name="time" value="${time}" required></label>
+      <label class="field" style="flex:1">${t('Duración')}<select name="minutes">${durs.map((m) => `<option value="${m}" ${m === minutes ? 'selected' : ''}>${m < 60 ? t('{n} min', { n: m }) : m % 60 ? t('{h} h {n} min', { h: Math.floor(m / 60), n: m % 60 }) : t('{h} h', { h: m / 60 })}</option>`).join('')}</select></label>
+    </div>
+    <label class="check-row" style="margin-top:12px"><input type="checkbox" name="gcal" ${gcal ? 'checked' : ''} ${signed ? '' : 'disabled'}> ${t('Añadir a mi Google Calendar')}</label>
+    <p class="muted" style="font-size:var(--fs-sm)">${signed ? t('El evento lleva en las notas los ejercicios, series, repeticiones, RIR y carga de la sesión.') : t('Inicia sesión con Google para añadirla a tu calendario.')}</p>
+    <div class="stack" style="margin-top:12px">
+      <button class="block primary" value="ok">${t('Guardar')}</button>
+      ${cur ? `<button class="block ghost danger" value="remove" formnovalidate>${t('Quitar la hora')}</button>` : ''}
+      <button class="block ghost" value="cancel" formnovalidate>${t('Cancelar')}</button>
+    </div>`,
+  (fd, _f, value) => {
+    if (value === 'remove') {
+      state.schedule = state.schedule.filter((x) => x !== cur);
+      state.gcalQueue = state.gcalQueue.filter((x) => x.iso !== cell.iso);
+      queueCal({ op: 'delete', eventId: cur.eventId });
+      save(); render(); flushCalendar(true);
+      toast(t('Hora quitada'));
+      return;
+    }
+    const tm = String(fd.get('time') || '');
+    if (!/^\d{2}:\d{2}$/.test(tm)) return false;
+    const entry = cur || { iso: cell.iso, name: cell.routine.name };
+    Object.assign(entry, { time: tm, minutes: Number(fd.get('minutes')) || 60 });
+    if (!cur) state.schedule.push(entry);
+    const want = fd.has('gcal');
+    if (signed) state.settings.gcal = want;
+    if (want) queueCal({ op: 'upsert', iso: cell.iso });
+    else if (entry.eventId) { queueCal({ op: 'delete', eventId: entry.eventId }); delete entry.eventId; state.gcalQueue = state.gcalQueue.filter((x) => x.iso !== cell.iso || x.op === 'delete'); }
+    save(); render();
+    // Se pide el permiso ahora, mientras el toque del botón aún permite abrir la ventana de Google.
+    if (signed) flushCalendar(true);
+    toast(t('Sesión a las {time}', { time: tm }));
+  });
+}
+
 function skipSession(cell) {
   ask(t('¿Saltar «{name}» ({day})? Seguirás con el plan sin recuperarla.', { name: rName(cell.routine.name), day: dayLabel(cell) }), t('Saltar'), () => { setMove(state, cell, null, calCell); commit(); });
 }
@@ -678,7 +835,7 @@ function viewCalendar() {
   const n = (r) => r.exerciseIds.filter(exById).length;
   let hoy;
   if (today.routine && (today.status === 'planned')) {
-    hoy = `<div class="card accent today-card"><div class="row between"><div><small class="muted">${t('Hoy')} · ${t(today.weekday)}</small><h3>${esc(rName(today.routine.name))}</h3><span class="muted">${tn(n(today.routine), '{n} ejercicio', '{n} ejercicios')}</span></div><button class="primary" data-action="start" data-id="${today.routine.id}">${t('Empezar')}</button></div></div>`;
+    hoy = `<div class="card accent today-card"><div class="row between"><div><small class="muted">${t('Hoy')} · ${t(today.weekday)}${scheduleAt(today.iso) ? ` · ${scheduleAt(today.iso).time}` : ''}</small><h3>${esc(rName(today.routine.name))}</h3><span class="muted">${tn(n(today.routine), '{n} ejercicio', '{n} ejercicios')}</span></div><button class="primary" data-action="start" data-id="${today.routine.id}">${t('Empezar')}</button></div></div>`;
   } else if (today.status === 'done' || today.status === 'partial') {
     hoy = `<div class="card today-card"><div class="row between"><div><small class="muted">${t('Hoy')}</small><h3>${today.status === 'partial' ? '◐' : '✓'} ${esc(rName(today.routine.name))}</h3></div><button class="small" data-action="cal-day" data-iso="${today.iso}">${t('Ver')}</button></div></div>`;
   } else if (today.status === 'extra') {
@@ -691,14 +848,17 @@ function viewCalendar() {
     const label = d.routine ? shortName(rName(d.routine.name)) : d.status === 'extra' ? shortName(rName(d.extra.name)) : d.status === 'moved' ? `${fwd()} ${Number(d.movedTo.slice(8))}` : d.status === 'skipped' ? t('saltada') : '';
     const click = d.routine || d.extra || d.status === 'moved' || d.status === 'skipped';
     return `<button class="cal-day ${d.status} ${d.isToday ? 'today' : ''}" ${click ? `data-action="cal-day" data-iso="${d.iso}"` : 'disabled'} aria-label="${t(d.weekday)} ${d.date.getDate()}${label ? `, ${esc(label)}` : ''}">
-      <small>${dayLetter(d.idx)}</small><b>${d.date.getDate()}</b><i>${d.movedFrom && d.status === 'planned' ? '↪' : sym[d.status]}</i><em>${esc(label)}</em></button>`;
+      <small>${dayLetter(d.idx)}</small><b>${d.date.getDate()}</b><i${d.status === 'planned' && scheduleAt(d.iso) ? ' class="tm"' : ''}>${d.status === 'planned' && scheduleAt(d.iso) ? scheduleAt(d.iso).time : d.movedFrom && d.status === 'planned' ? '↪' : sym[d.status]}</i><em>${esc(label)}</em></button>`;
   };
   const grid = weeks.map((w, i) => {
     const lab = planWeekLabel(w.days[0].date.getTime());
     return `<div class="cal-head"><b>${i === 0 ? t('Esta semana') : i === 1 ? t('Próxima') : t('Semana del {date}', { date: w.days[0].date.toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) })}</b><span class="muted">${lab ? esc(lab.text) : ''}</span>${lab?.deload ? `<span class="pill">${t('Descarga')}</span>` : ''}</div>
       <div class="cal-grid">${w.days.map(cell).join('')}</div>`;
   }).join('');
-  return `${hoy}${pendingCard(weeks)}<div class="cal">${grid}</div>`;
+  const gq = state.gcalQueue?.length && cloud.currentUser() && !calFlushing
+    ? `<div class="card row between"><span class="muted">${ic('calendar')} ${t('Hay cambios pendientes en tu Google Calendar')}</span><button class="small" data-action="gcal-sync">${t('Actualizar')}</button></div>` : '';
+  return `${hoy}${pendingCard(weeks)}${gq}<div class="cal">${grid}</div>
+    <p class="muted cal-hint">${ic('clock')} ${t('Toca una sesión para ponerle hora y añadirla a tu Google Calendar.')}</p>`;
 }
 
 function viewTrain() {
@@ -879,14 +1039,33 @@ function viewHistory() {
           <button class="ghost danger" data-action="delete-workout" data-id="${w.id}" aria-label="${t('Borrar entreno')}">✕</button>
         </div>
       </div>
-      <div class="stack" style="margin-top:8px">
-        ${w.entries.map((e) => {
-          const done = e.sets.filter((s) => s.done);
-          const badge = e.group ? ` <span class="pill">${ic('link')}${blockLetter(w.entries, e.group)}</span>` : '';
-          return `<div class="row between"><span>${esc(exDisp(e.exerciseId))}${badge}</span><span class="muted">${done.map((s) => fmtSet(e.exerciseId, s)).join(', ') || '—'}</span></div>`;
-        }).join('')}
-      </div>
+      ${historyTable(w)}
     </div>`).join('') + '</div>';
+}
+
+/** Valores de las series en columna: uno solo si todas coinciden ("10"); si no, en orden ("10 · 10 · 8"). */
+const histVals = (vals) => (!vals.length ? '—' : vals.every((v) => v === vals[0]) ? vals[0] : vals.join(' · '));
+
+/** Tabla de un entreno del historial: una fila por ejercicio con series, repeticiones, kilos y RIR. */
+function historyTable(w) {
+  const rows = w.entries.map((e) => {
+    const done = e.sets.filter((s) => s.done);
+    const timed = isTimed(e.exerciseId);
+    const badge = e.group ? ` <span class="pill">${ic('link')}${blockLetter(w.entries, e.group)}</span>` : '';
+    const reps = done.map((s) => (timed ? fmtSecs(num(s.r)) : String(num(s.r))));
+    const kg = done.some((s) => num(s.w)) ? done.map((s) => fmtKg(num(s.w))) : [];
+    const rir = e.target?.rir ?? e.rir;
+    return `<tr${done.length ? '' : ' class="none"'}>
+      <th scope="row">${esc(exDisp(e.exerciseId))}${badge}</th>
+      <td>${done.length || '—'}</td>
+      <td dir="ltr">${histVals(reps)}</td>
+      <td dir="ltr">${kg.length ? histVals(kg) : done.length ? `<span class="muted">${t('corp.')}</span>` : '—'}</td>
+      <td>${rir !== undefined && rir !== null && rir !== '' ? esc(String(rir)) : '—'}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="scroll-x" tabindex="0"><table class="hist-table">
+    <thead><tr><th scope="col">${t('Ejercicio')}</th><th scope="col">${t('Series')}</th><th scope="col">${t('Reps')}</th><th scope="col">${t('Kg')}</th><th scope="col">RIR</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
 }
 
 function progressSeries(exerciseId) {
@@ -1319,11 +1498,13 @@ const actions = {
       const canMove = !day.workout;
       openDialog(`
         <h2>${title} · ${esc(rName(r.name))}</h2>
+        ${scheduleAt(day.iso) && !day.workout ? `<p class="muted">${ic('clock')} ${scheduleAt(day.iso).time}${scheduleAt(day.iso).eventId ? ` · ${t('en tu Google Calendar')}` : ''}</p>` : ''}
         ${note}
         <ul class="exlist">${items}${adj}</ul>
         <div class="stack" style="margin-top:12px">
           <button class="block primary" value="start">${day.workout ? t('Hacerlo otra vez') : day.status === 'missed' ? t('Hacerlo ahora') : t('Empezar')}</button>
           ${day.status === 'partial' && day.workout?.skipped?.length ? `<button class="block" value="rest">${t('Hacer lo que faltó')}</button>` : ''}
+          ${canMove && !day.isPast ? `<button class="block" value="time">${ic('clock')} ${scheduleAt(day.iso) ? t('A las {time} · cambiar', { time: scheduleAt(day.iso).time }) : t('Poner hora')}</button>` : ''}
           ${canMove ? `<button class="block" value="move">${ic('calendar')} ${t('Mover a otro día')}</button><button class="block" value="skip">${t('Saltar esta sesión')}</button>` : ''}
           ${day.movedFrom && !day.workout ? `<button class="block ghost" value="back">${t('Volver a su día')}</button>` : ''}
           ${day.workout ? `<button class="block" value="history">${t('Ver en historial')}</button>` : ''}
@@ -1332,6 +1513,7 @@ const actions = {
       (fd, _f, value) => {
         if (value === 'start') { actions.start(r.id); commit(); }
         else if (value === 'rest') { actions['start-rest'](day.workout.id); commit(); }
+        else if (value === 'time') scheduleDialog(day);
         else if (value === 'move') moveDialog(day);
         else if (value === 'skip') skipSession(day);
         else if (value === 'back') { setMove(state, day, day.movedFrom, calCell); commit(); }
@@ -1360,6 +1542,7 @@ const actions = {
     }
     return false;
   },
+  'gcal-sync'() { flushCalendar(true); return false; },
   'cal-move'(_, el) { const c = calCell(el.dataset.iso); if (c?.routine) moveDialog(c); return false; },
   'cal-skip'(_, el) { const c = calCell(el.dataset.iso); if (c?.routine) skipSession(c); return false; },
   // ---- unir ejercicios duplicados
@@ -1498,7 +1681,7 @@ const actions = {
   },
 };
 
-function commit() { save(); render(); }
+function commit() { reconcileSchedule(); save(); render(); flushCalendar(); }
 
 /* ---------- eventos ---------- */
 

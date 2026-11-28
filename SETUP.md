@@ -73,6 +73,17 @@ En iPhone: Safari → Compartir → *Añadir a pantalla de inicio*.
 - **Uso comercial**: el plan gratuito de Vercel es para proyectos personales. Si vas a cobrar por la app, necesitas Vercel Pro.
 - **Regenerar el paquete de Firebase** (solo para desarrolladores): `npm install && npm run build:firebase`.
 
+### Google Calendar (poner hora a las sesiones)
+
+En Entrenar, al tocar una sesión del plan → **Poner hora**, la app puede crear el evento en el calendario principal de tu cuenta de Google, con el resumen de la sesión (ejercicios, series, repeticiones, RIR y carga) en las notas. Si mueves, intercambias o saltas la sesión, el evento se mueve o se borra. Para que funcione hay que activarlo una vez en el proyecto de Google Cloud que creó Firebase:
+
+1. Entra en <https://console.cloud.google.com> y elige el proyecto de Firebase (`gymonkey`).
+2. **APIs y servicios → Biblioteca** → busca **Google Calendar API** → **Habilitar**.
+3. **APIs y servicios → Pantalla de consentimiento de OAuth** (o *Google Auth Platform*) → **Acceso a los datos / Permisos** → **Agregar permisos** → marca `.../auth/calendar.events` → **Guardar**.
+4. Mientras la app esté en modo **Prueba**, añade en **Público → Usuarios de prueba** los correos que la vayan a usar. Google mostrará el aviso «Google no ha verificado esta aplicación»: toca *Continuar*. Para quitar el aviso a todo el mundo hay que pasar la verificación de Google (el permiso de calendario es «sensible»).
+
+El permiso de calendario se pide la primera vez que guardas una hora con la casilla marcada (una ventana de Google). El token dura una hora: pasado ese tiempo, al guardar otra hora la ventana se abre y se cierra sola; si algún cambio queda pendiente, aparece un botón **Actualizar** en el calendario de Entrenar.
+
 ### Acceso abierto con cuota por persona
 
 Para que cualquiera pueda registrarse con Google y usar la IA sin que lo apruebes, deja **vacías** `ALLOWED_EMAILS` y `ALLOWED_EMAILS_EXTRA`
