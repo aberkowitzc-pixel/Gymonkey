@@ -52,9 +52,10 @@ export const originalDate = (cell) => cell.movedFrom || cell.iso;
  * Estado de cada día: done · partial · missed · planned · moved (la sesión se movió a otro día) ·
  * skipped (saltada) · extra (entreno fuera de plan) · rest.
  * `moves` reprograma sesiones sin tocar el plan: { name, from, to } (to = null: saltada).
+ * `extras`: sesiones fuera del plan en una fecha ({ id, iso, name, exerciseIds, targets }).
  * Un entreno de una rutina hecho otro día de esa misma semana cuenta para su día previsto.
  */
-export function buildWeeks({ now = Date.now(), routines = [], workouts = [], weeks = 2, moves = [] }) {
+export function buildWeeks({ now = Date.now(), routines = [], workouts = [], weeks = 2, moves = [], extras = [] }) {
   const planned = routines.filter((r) => r.fromPlan && r.weekday);
   const start = mondayOf(now);
   const todayISO = isoLocal(now);
@@ -66,7 +67,8 @@ export function buildWeeks({ now = Date.now(), routines = [], workouts = [], wee
     all.push({ date, iso: isoLocal(date), idx: i % 7, weekday: WEEKDAYS[i % 7] });
   }
   const base = {};
-  all.forEach((d) => { base[d.iso] = planned.find((r) => r.weekday === d.weekday) || null; });
+  // Sesiones extra: fuera del plan, en un día concreto sin sesión del plan.
+  all.forEach((d) => { base[d.iso] = planned.find((r) => r.weekday === d.weekday) || extras.find((x) => x.iso === d.iso) || null; });
 
   // Movimientos válidos: la sesión existe ese día; el destino está libre (o también se mueve: intercambio); un solo aterrizaje por día.
   const valid = moves.filter((m) => m.from && base[m.from]?.name === m.name);
