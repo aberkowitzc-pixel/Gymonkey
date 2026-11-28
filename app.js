@@ -1087,7 +1087,8 @@ function viewCalendar() {
   };
   const grid = weeks.map((w, i) => {
     const lab = planWeekLabel(w.days[0].date.getTime());
-    return `<div class="cal-head"><b>${i === 0 ? t('Esta semana') : i === 1 ? t('Próxima') : t('Semana del {date}', { date: w.days[0].date.toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) })}</b><span class="muted">${lab ? esc(lab.text) : ''}</span>${lab?.deload ? `<span class="pill">${t('Descarga')}</span>` : ''}</div>
+    const title = i === 0 ? t('Esta semana') : i === 1 ? t('Próxima') : t('Semana del {date}', { date: w.days[0].date.toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) });
+    return `<div class="cal-head"><div><b>${title}</b>${lab?.head ? ` <span class="muted">· ${esc(lab.head)}</span>` : ''}${lab?.deload ? ` <span class="pill">${t('Descarga')}</span>` : ''}</div>${lab?.block ? `<small class="muted">${esc(lab.block)}${lab.tip ? ` · ${esc(lab.tip)}` : ''}</small>` : lab?.text ? `<small class="muted">${esc(lab.text)}</small>` : ''}</div>
       <div class="cal-grid">${w.days.map(cell).join('')}</div>`;
   }).join('');
   const gq = state.gcalQueue?.length && cloud.currentUser() && !calFlushing
@@ -1117,7 +1118,7 @@ function viewTrain() {
         <button class="primary" data-action="new-session">+ ${t('Nueva sesión')}</button>
         <button data-action="voice-open">${ic('mic')} ${t('Dictar')}</button>
       </div>
-      ${cal ? (routines ? `<details class="how"><summary>${t('Todas las rutinas')}</summary>${routines}</details>` : '') : (routines || emptyState('coach', t('Aún no tienes rutinas'), t('Crea tu plan con el coach y tus rutinas aparecerán aquí.'), `<button class="primary" data-action="go-plan">${t('Crear mi plan')}</button><button data-action="start">+ ${t('Entreno vacío')}</button>`))}`;
+      ${cal ? (routines ? `<details class="how routines-more"><summary>${ic('list')}<span>${t('Todas las rutinas')}</span><span class="pill">${state.routines.length}</span>${ic('chevron', 'chev')}</summary>${routines}</details>` : '') : (routines || emptyState('coach', t('Aún no tienes rutinas'), t('Crea tu plan con el coach y tus rutinas aparecerán aquí.'), `<button class="primary" data-action="go-plan">${t('Crear mi plan')}</button><button data-action="start">+ ${t('Entreno vacío')}</button>`))}`;
   }
 
   if (reorder) return viewReorder(a);

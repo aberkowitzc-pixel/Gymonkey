@@ -31,6 +31,7 @@ const PATHS = {
  "link": "<path d=\"M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1\"/>",
  "reorder": "<path d=\"M8 4v16M5 7l3-3 3 3M16 20V4M13 17l3 3 3-3\"/>",
  "stop": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/>",
+ "chevron": "<path d=\"M6 9l6 6 6-6\"/>",
  "dumbbell": "<path d=\"M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11\"/>"
 };
 

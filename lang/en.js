@@ -664,4 +664,7 @@ export default {
   "¿Quitar «{name}» del {day}?": "Remove “{name}” from {day}?",
   "Quitar": "Remove",
   "Términos y privacidad": "Terms and privacy",
+  "Semana {w} de {total} · {name}": "Week {w} of {total} · {name}",
+  "Semana {w} de {total} del plan": "Week {w} of {total} of the plan",
+  "{name} · semana {n} de {of}": "{name} · week {n} of {of}",
 };

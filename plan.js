@@ -946,5 +946,13 @@ export function planWeekLabel(ts) {
   const wi = weekInfo(plan, ts);
   if (!wi) return null;
   if (wi.finished) return { text: t('Plan completado'), deload: false };
-  return { text: t('S{w}/{total} · {name}', { w: wi.week, total: plan.total_weeks, name: plan.mesocycles[wi.meso].name }), deload: !!wi.wp?.deload };
+  const m = plan.mesocycles[wi.meso];
+  return {
+    text: t('Semana {w} de {total} · {name}', { w: wi.week, total: plan.total_weeks, name: m.name }),
+    // Para el calendario: "Semana 2 de 12" y debajo el bloque en el que estás y lo que toca esa semana.
+    head: t('Semana {w} de {total} del plan', { w: wi.week, total: plan.total_weeks }),
+    block: t('{name} · semana {n} de {of}', { name: m.name, n: wi.weekInMeso, of: m.weeks }),
+    tip: wi.wp?.label || '',
+    deload: !!wi.wp?.deload,
+  };
 }

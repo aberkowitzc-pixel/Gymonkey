@@ -352,8 +352,9 @@ details.ctx textarea { margin-top: 8px; }
 .today-card h3 { margin: 4px 0; }
 .today-card small { font-size: var(--fs-sm); }
 .cal { margin-bottom: 16px; }
-.cal-head { display: flex; align-items: baseline; gap: 8px; margin: 12px 4px 8px; font-size: var(--fs-sm); }
-.cal-head .muted { font-size: var(--fs-sm); flex: 1; }
+.cal-head { display: flex; flex-direction: column; gap: 2px; margin: 14px 4px 8px; font-size: var(--fs-sm); }
+.cal-head .muted { font-size: var(--fs-sm); }
+.cal-head small { font-size: var(--fs-xs); }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .cal-day { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 8px 0 5px; min-width: 0; border-radius: var(--r-sm); background: var(--card); border: 1px solid var(--line); color: var(--text); line-height: 1.15; }
 .cal-day small { font-size: var(--fs-xs); color: var(--muted); }
@@ -568,3 +569,11 @@ input:not([type="checkbox"]):not([type="radio"]), textarea, .rlist, .rname b, .s
 
 .chips.quick { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0; }
 .chip-btn { font-size: var(--fs-sm); padding: 8px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--text); border: 1px solid var(--line); }
+
+/* "Todas las rutinas": que se vea que se despliega */
+details.routines-more > summary { display: flex; align-items: center; gap: 10px; min-height: var(--tap); padding: 10px var(--s4); border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface); color: var(--text); font-size: var(--fs-md); font-weight: 600; list-style: none; cursor: pointer; }
+details.routines-more > summary::-webkit-details-marker { display: none; }
+details.routines-more > summary > span:first-of-type { flex: 1; }
+details.routines-more .chev { transition: transform .2s ease; color: var(--muted); }
+details.routines-more[open] .chev { transform: rotate(180deg); }
+details.routines-more[open] > summary { margin-bottom: var(--s3); }
