@@ -623,4 +623,5 @@ export default {
   "Poner hora": "קבע שעה",
   "{h} h {n} min": "{h} ש׳ {n} דק׳",
   "{h} h": "{h} ש׳",
+  "Minutos": "דקות",
 };

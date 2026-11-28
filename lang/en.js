@@ -623,4 +623,5 @@ export default {
   "Poner hora": "Set a time",
   "{h} h {n} min": "{h} h {n} min",
   "{h} h": "{h} h",
+  "Minutos": "Minutes",
 };

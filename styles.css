@@ -419,7 +419,11 @@ details.ctx textarea { margin-top: 8px; }
 .cal-day em { font-style: normal; font-size: var(--fs-xs); max-width: 100%; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); min-height: 1em; }
 .cal-day i.tm { font-size: var(--fs-xs); font-family: var(--font-mono); color: var(--primary-text); }
 .cal-hint { font-size: var(--fs-xs); margin: 8px 4px 0; }
-.check-row { display: flex; align-items: center; gap: 8px; }
+.gcal-opt { display: flex; align-items: flex-start; gap: 12px; margin-top: 16px; padding: 12px; border: 1px solid var(--line-strong); border-radius: var(--r-md, 12px); background: var(--surface); cursor: pointer; }
+.gcal-opt input[type="checkbox"] { width: 22px; height: 22px; flex: none; margin: 2px 0 0; padding: 0; accent-color: var(--primary); }
+.gcal-opt b { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.gcal-opt small { display: block; color: var(--muted); font-size: var(--fs-sm); margin-top: 4px; }
+.gcal-opt.off { opacity: 0.6; cursor: default; }
 .cal-day.rest { background: transparent; border-color: transparent; color: var(--muted); }
 .cal-day.planned { border-style: dashed; border-color: var(--accent); }
 .cal-day.planned em { color: var(--primary-text); font-weight: 600; }
