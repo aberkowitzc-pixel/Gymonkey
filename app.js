@@ -1108,8 +1108,6 @@ function viewTrain() {
         <div class="rlist">${r.exerciseIds.map((id) => esc(exDisp(id))).join(' · ') || t('Sin ejercicios')}</div>
       </button>`).join('');
     const routines = routineRows ? `<div class="list">${routineRows}</div>` : '';
-    const weekAgo = Date.now() - 7 * 864e5;
-    const thisWeek = state.workouts.filter((w) => w.start >= weekAgo).length;
     const missing = missingLoads().length;
     return `
       ${planTrainBanner()}
@@ -1119,8 +1117,7 @@ function viewTrain() {
         <button class="primary" data-action="new-session">+ ${t('Nueva sesión')}</button>
         <button data-action="voice-open">${ic('mic')} ${t('Dictar')}</button>
       </div>
-      ${cal ? (routines ? `<details class="how"><summary>${t('Todas las rutinas')}</summary>${routines}</details>` : '') : (routines || emptyState('coach', t('Aún no tienes rutinas'), t('Crea tu plan con el coach y tus rutinas aparecerán aquí.'), `<button class="primary" data-action="go-plan">${t('Crear mi plan')}</button><button data-action="start">+ ${t('Entreno vacío')}</button>`))}
-      ${state.workouts.length ? `<p class="statline"><b>${thisWeek}</b> ${t('esta semana')} · <b>${state.workouts.length}</b> ${t('entrenos')} · <b>${fmtKg(state.workouts.reduce((sum, w) => sum + workoutVolume(w), 0) / 1000)}</b> ${t('t')}</p>` : ''}`;
+      ${cal ? (routines ? `<details class="how"><summary>${t('Todas las rutinas')}</summary>${routines}</details>` : '') : (routines || emptyState('coach', t('Aún no tienes rutinas'), t('Crea tu plan con el coach y tus rutinas aparecerán aquí.'), `<button class="primary" data-action="go-plan">${t('Crear mi plan')}</button><button data-action="start">+ ${t('Entreno vacío')}</button>`))}`;
   }
 
   if (reorder) return viewReorder(a);
