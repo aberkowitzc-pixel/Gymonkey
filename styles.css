@@ -279,6 +279,14 @@ legend { padding: 0; margin-bottom: 8px; display: flex; align-items: center; gap
 .plan-table td:not(:first-child) { white-space: nowrap; }
 .plan-table small { display: block; color: var(--muted); font-size: var(--fs-xs); margin-top: 4px; }
 .plan-table small.alt { font-style: italic; }
+.hist-table { width: 100%; border-collapse: collapse; margin-top: var(--s2); font-size: var(--fs-sm); }
+.hist-table thead th { font-size: var(--fs-xs); color: var(--muted); font-weight: 500; padding: 4px 6px; text-align: center; white-space: nowrap; }
+.hist-table thead th:first-child { text-align: start; padding-inline-start: 0; }
+.hist-table tbody th { text-align: start; font-weight: 500; padding: 8px 6px 8px 0; padding-inline: 0 6px; }
+.hist-table td { padding: 8px 6px; text-align: center; white-space: nowrap; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.hist-table tbody tr { border-top: 1px solid var(--line); }
+.hist-table td:nth-child(4) { font-weight: 600; }
+.hist-table tr.none { color: var(--muted); }
 .edit-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .edit-table th { font-size: var(--fs-xs); color: var(--muted); font-weight: 500; text-align: start; padding: 4px; }
 .edit-table td { padding: 4px; }
@@ -409,6 +417,9 @@ details.ctx textarea { margin-top: 8px; }
 .cal-day b { font-size: var(--fs-md); }
 .cal-day i { font-style: normal; height: 1.1em; font-size: var(--fs-sm); line-height: 1.1em; }
 .cal-day em { font-style: normal; font-size: var(--fs-xs); max-width: 100%; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); min-height: 1em; }
+.cal-day i.tm { font-size: var(--fs-xs); font-family: var(--font-mono); color: var(--primary-text); }
+.cal-hint { font-size: var(--fs-xs); margin: 8px 4px 0; }
+.check-row { display: flex; align-items: center; gap: 8px; }
 .cal-day.rest { background: transparent; border-color: transparent; color: var(--muted); }
 .cal-day.planned { border-style: dashed; border-color: var(--accent); }
 .cal-day.planned em { color: var(--primary-text); font-weight: 600; }

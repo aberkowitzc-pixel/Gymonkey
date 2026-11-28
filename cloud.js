@@ -35,7 +35,35 @@ export async function signIn() {
   }
 }
 
-export async function signOutCloud() { await fb.signOut(auth); remoteWorkoutIds = new Set(); }
+export async function signOutCloud() { dropCalendarToken(); await fb.signOut(auth); remoteWorkoutIds = new Set(); }
+
+// Acceso a Google Calendar: un token de OAuth (dura ~1 h) pedido con un permiso extra sobre la misma cuenta.
+const CAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+const CAL_KEY = 'gymonkey-cal-token';
+let calToken = null;
+
+/**
+ * Token para la API de Calendar. Si no hay uno vigente y `interactive`, abre la ventana de Google
+ * (la primera vez pide permiso para el calendario; después solo confirma la cuenta).
+ */
+export async function calendarToken({ interactive = true } = {}) {
+  if (!user) throw new Error('not-signed-in');
+  if (!calToken) { try { calToken = JSON.parse(sessionStorage.getItem(CAL_KEY)); } catch (_) { calToken = null; } }
+  if (calToken && calToken.uid === user.uid && calToken.exp > Date.now() + 120e3) return calToken.token;
+  if (!interactive) return null;
+  const provider = new fb.GoogleAuthProvider();
+  provider.addScope(CAL_SCOPE);
+  if (user.email) provider.setCustomParameters({ login_hint: user.email });
+  const res = await fb.reauthenticateWithPopup(user, provider);
+  const token = fb.GoogleAuthProvider.credentialFromResult(res)?.accessToken;
+  if (!token) throw new Error('no-token');
+  calToken = { token, uid: user.uid, exp: Date.now() + 55 * 60e3 };
+  try { sessionStorage.setItem(CAL_KEY, JSON.stringify(calToken)); } catch (_) { /* ignorar */ }
+  return token;
+}
+
+/** El token guardado dejó de valer (caducado o permiso retirado): la próxima vez se pide otro. */
+export function dropCalendarToken() { calToken = null; try { sessionStorage.removeItem(CAL_KEY); } catch (_) { /* ignorar */ } }
 
 export async function idToken() { return user ? user.getIdToken() : null; }
 

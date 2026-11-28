@@ -27,7 +27,8 @@ App web (PWA) para registrar tus entrenamientos en el gimnasio, con un **entrena
 - **Descanso entre series**: empieza solo al terminar cada serie. Muestra cuánto llevas y cuánto queda, se puede alargar o acortar (±15 s) y avisa con sonido, vibración y notificación. Descanso por defecto en ⚙️ Ajustes y descanso propio por ejercicio con el botón ⏱.
 - **Pantalla de bloqueo**: el temporizador aparece en los controles multimedia del móvil, también bloqueado (se puede desactivar en Ajustes; si escuchas música en el mismo móvil, puede pausarla).
 - **Rutinas**: crea y edita rutinas (vienen 3 de ejemplo: Push, Pull y Legs) y tu propia lista de ejercicios.
-- **Historial**: todos tus entrenos con duración, series y volumen total.
+- **Historial**: todos tus entrenos con duración y volumen total, y una tabla por sesión con una fila por ejercicio y columnas de series, repeticiones, kilos y RIR.
+- **Hora de las sesiones y Google Calendar**: toca una sesión del calendario → *Poner hora*. Se ve en el calendario y, si marcas la casilla, se crea un evento en tu Google Calendar con el resumen de la sesión (ejercicios, series × reps, RIR y carga) en las notas. Si mueves o saltas la sesión, el evento la sigue o se borra. Requiere activar la API de Calendar (ver `SETUP.md`).
 - **Progreso**: gráfica del 1RM estimado (fórmula de Epley), peso máximo y evolución por ejercicio.
 - **Copia de seguridad**: exporta e importa tus datos en JSON (pestaña Rutinas → Datos).
 
@@ -61,6 +62,7 @@ Solo la parte sin IA: `python3 -m http.server 8000` y abre http://localhost:8000
 | `progression.js` | Doble progresión: carga y repeticiones sugeridas de cada ejercicio |
 | `sessions.js` | Registrar entrenos dictando y importar historial |
 | `cloud.js`, `config.js` | Inicio de sesión con Google y guardado en Firestore |
+| `gcal.js` | Eventos de Google Calendar para las sesiones con hora |
 | `api/plan.js`, `lib/` | Servidor (Vercel): verifica al usuario y llama a Claude |
 | `firestore.rules` | Reglas de seguridad: cada persona solo ve sus datos |
 | `vendor/firebase.js` | SDK de Firebase empaquetado (`npm run build:firebase`) |

@@ -3,6 +3,6 @@
 export { initializeApp } from 'firebase/app';
 export {
   getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
-  onAuthStateChanged, signOut,
+  onAuthStateChanged, signOut, reauthenticateWithPopup,
 } from 'firebase/auth';
 export { getFirestore, doc, getDoc, getDocs, collection, writeBatch } from 'firebase/firestore';
