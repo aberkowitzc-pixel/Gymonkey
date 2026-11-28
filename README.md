@@ -28,7 +28,7 @@ App web (PWA) para registrar tus entrenamientos en el gimnasio, con un **entrena
 - **Pantalla de bloqueo**: el temporizador aparece en los controles multimedia del móvil, también bloqueado (se puede desactivar en Ajustes; si escuchas música en el mismo móvil, puede pausarla).
 - **Rutinas**: crea y edita rutinas (vienen 3 de ejemplo: Push, Pull y Legs) y tu propia lista de ejercicios.
 - **Historial**: todos tus entrenos con duración y volumen total, y una tabla por sesión con una fila por ejercicio y columnas de series, repeticiones, kilos y RIR.
-- **Hora de las sesiones y Google Calendar**: toca una sesión del calendario → *Poner hora*. Se ve en el calendario y, si marcas la casilla, se crea un evento en tu Google Calendar con el resumen de la sesión (ejercicios, series × reps, RIR y carga) en las notas. Si mueves o saltas la sesión, el evento la sigue o se borra. Requiere activar la API de Calendar (ver `SETUP.md`).
+- **Horario semanal y Google Calendar**: en Entrenar → *Fijar horario semanal* eliges a qué hora entrenas cada día (p. ej. martes 07:30, jueves 19:00). Todas las sesiones que vienen toman esa hora y, si marcas la casilla, se crean sus eventos en tu Google Calendar con el resumen de la sesión (ejercicios, series × reps, RIR y carga) en las notas. Un día concreto se cambia tocándolo en el calendario. Si cambias el horario, mueves o saltas una sesión, los eventos se actualizan solos. Requiere activar la API de Calendar (ver `SETUP.md`).
 - **Progreso**: gráfica del 1RM estimado (fórmula de Epley), peso máximo y evolución por ejercicio.
 - **Copia de seguridad**: exporta e importa tus datos en JSON (pestaña Rutinas → Datos).
 

@@ -46,12 +46,16 @@ async function call(token, method, path, body) {
   return res.json();
 }
 
-/** Crea el evento, o lo actualiza si ya existía (si se borró desde el calendario, se crea de nuevo). */
-export async function upsertEvent(token, eventId, event) {
-  if (eventId) {
-    try { return await call(token, 'PUT', `/${encodeURIComponent(eventId)}`, event); } catch (e) { if (e.status !== 404 && e.status !== 410) throw e; }
-  }
-  return call(token, 'POST', '', event);
+/**
+ * Identificador fijo del evento de un día ("gmk20261201"): el mismo en todos los dispositivos,
+ * así dos dispositivos no crean dos eventos para la misma sesión. Solo admite 0-9 y a-v.
+ */
+export const eventIdFor = (iso) => `gmk${iso.replace(/-/g, '')}`;
+
+/** Crea o actualiza el evento con ese identificador (si se borró desde el calendario, vuelve a aparecer). */
+export async function upsertEvent(token, id, event) {
+  try { return await call(token, 'PUT', `/${encodeURIComponent(id)}`, event); } catch (e) { if (e.status !== 404) throw e; }
+  return call(token, 'POST', '', { ...event, id });
 }
 
 export const deleteEvent = (token, eventId) => call(token, 'DELETE', `/${encodeURIComponent(eventId)}`);

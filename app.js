@@ -14,7 +14,7 @@ import { initWeek, viewWeek, weekActive, weekBusy, weekTick, weekLeave, weekActi
 import { matchExercise, mergeExercises, findDuplicates, dedupeLibrary } from './exercises.js';
 import { t, tn, T, E, tData, getLang, setLang, LANGS, detectLang, fmtNum, fwd, dayShort, dayLetter, exLabel, canonicalExercise, fmtDateShort, fmtTime, isRTL, locale } from './i18n.js';
 import { ic } from './icons.js';
-import { buildEvent, upsertEvent, deleteEvent } from './gcal.js';
+import { buildEvent, upsertEvent, deleteEvent, eventIdFor } from './gcal.js';
 import { initSessions, viewSessions, sessionsActive, sessionsBusy, sessionsTick, sessionsLeave, sessionsActions, onSessionsInput, onSessionsChange, onSessionsFile } from './sessions.js';
 
 const STORAGE_KEY = 'gymonkey:v1';
@@ -64,6 +64,7 @@ function defaultState() {
     moves: [],
     adjust: [],
     schedule: [],
+    weekTimes: null,
     gcalQueue: [],
     meta: { deletedWorkouts: [] },
   };
@@ -80,6 +81,8 @@ function migrate(s) {
   s.moves ??= [];
   s.adjust ??= [];
   s.schedule ??= [];
+  s.weekTimes ??= null;
+  s.schedule.forEach((x) => { if (x.gcal === undefined) x.gcal = !!x.eventId; });
   s.gcalQueue ??= [];
   s.meta = { deletedWorkouts: [], ...(s.meta || {}) };
   dedupeLibrary(s);
@@ -673,11 +676,21 @@ function moveDialog(cell) {
 }
 
 /* ---------- hora de las sesiones y Google Calendar ---------- */
-// state.schedule: [{ iso, name, time: 'HH:MM', minutes, eventId }] — la hora prevista de una sesión del plan ese día.
-// state.gcalQueue: cambios pendientes de llevar al calendario de Google ({ op: 'upsert', iso } | { op: 'delete', eventId }).
+// state.weekTimes: horario fijo por día de la semana → { days: { Martes: '07:30', … }, minutes, gcal }.
+// state.schedule: [{ iso, name, time, minutes, gcal, eventId, auto, off }] — la hora de cada sesión concreta.
+//   auto: viene del horario semanal (cambia si cambias el horario); sin auto, la elegiste para ese día.
+//   off: ese día no lleva hora aunque el horario semanal diga otra cosa.
+// state.gcalQueue: cambios pendientes de llevar a Google Calendar ({ op: 'upsert', iso } | { op: 'delete', eventId }).
 
 const scheduleAt = (iso) => (state.schedule || []).find((x) => x.iso === iso) || null;
-const lastSchedule = () => (state.schedule || []).reduce((a, x) => (!a || x.iso > a.iso ? x : a), null);
+/** Hora visible de un día (sin las marcadas como "sin hora"). */
+const timeAt = (iso) => { const x = scheduleAt(iso); return x && !x.off ? x : null; };
+const pad2 = (n) => String(n).padStart(2, '0');
+const fmtMinutes = (m) => (m < 60 ? t('{n} min', { n: m }) : m % 60 ? t('{h} h {n} min', { h: Math.floor(m / 60), n: m % 60 }) : t('{h} h', { h: m / 60 }));
+const DURS = [30, 45, 60, 75, 90, 120];
+const MINS = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
+/** Semanas hacia delante que se rellenan con el horario semanal: las del calendario, y al menos cuatro. */
+const scheduleSpan = () => Math.max(4, calSpan());
 
 /** Resumen de la sesión para las notas del evento: un ejercicio por línea con series, reps, RIR y carga. */
 function sessionLines(cell) {
@@ -696,8 +709,8 @@ function sessionLines(cell) {
   return { lines, deload };
 }
 
-function eventFor(entry) {
-  const cell = calCell(entry.iso);
+function eventFor(entry, days) {
+  const cell = days.find((d) => d.iso === entry.iso);
   if (!cell?.routine) return null;
   const { lines, deload } = sessionLines(cell);
   const wl = planWeekLabel(cell.date.getTime());
@@ -709,58 +722,94 @@ function eventFor(entry) {
 }
 
 function queueCal(op) {
-  if (!op.eventId && op.op === 'delete') return;
-  const q = state.gcalQueue;
-  if (op.op === 'upsert' && q.some((x) => x.op === 'upsert' && x.iso === op.iso)) return;
-  q.push(op);
+  if (op.op === 'delete') {
+    if (!op.eventId) return;
+    state.gcalQueue = state.gcalQueue.filter((x) => !(x.op === 'delete' && x.eventId === op.eventId));
+  } else if (state.gcalQueue.some((x) => x.op === 'upsert' && x.iso === op.iso)) return;
+  state.gcalQueue.push(op);
 }
 
+/** El evento de una sesión deja de existir (se quita la hora, se desmarca el calendario o la sesión desaparece). */
+function dropEvent(x) {
+  state.gcalQueue = state.gcalQueue.filter((q) => !(q.op === 'upsert' && q.iso === x.iso));
+  queueCal({ op: 'delete', eventId: x.eventId });
+  delete x.eventId;
+}
+/** La sesión tiene hora nueva o ha cambiado: crear o actualizar su evento (o quitarlo si no va al calendario). */
+const syncEvent = (x) => (x.gcal && !x.off ? queueCal({ op: 'upsert', iso: x.iso }) : dropEvent(x));
+
 /**
- * Si una sesión con hora cambió de día (movida, intercambiada o de vuelta a su día), la hora y el evento la acompañan;
- * si ya no está en el calendario, el evento se borra.
+ * Mantiene las horas al día:
+ * - una sesión con hora que cambió de día (movida, intercambiada o de vuelta a su día) se lleva su hora y su evento;
+ *   si ya no está en el calendario, el evento se borra;
+ * - las sesiones futuras sin hora toman la de su día en el horario semanal.
  */
 function reconcileSchedule() {
-  if (!state.schedule?.length) return;
+  const wt = state.weekTimes;
+  const hasWeek = wt && Object.keys(wt.days || {}).length;
+  if (!state.schedule?.length && !hasWeek) return;
   const today = isoLocal(Date.now());
   // Las horas de hace más de un mes ya no hacen falta (los eventos se quedan en el calendario).
   const old = isoLocal(Date.now() - 30 * 864e5);
   if (state.schedule.some((x) => x.iso < old)) state.schedule = state.schedule.filter((x) => x.iso >= old);
-  const days = calWeeks(calSpan()).flatMap((w) => w.days);
+  const days = calWeeks(scheduleSpan()).flatMap((w) => w.days);
   const last = days[days.length - 1].iso;
+
   const stale = state.schedule.filter((x) => x.iso >= today && x.iso <= last && days.find((d) => d.iso === x.iso)?.routine?.name !== x.name);
-  if (!stale.length) return;
-  const taken = new Set(state.schedule.filter((x) => !stale.includes(x)).map((x) => x.iso));
-  const week = (iso) => isoLocal(mondayOf(new Date(`${iso}T12:00:00`)));
-  for (const x of stale) {
-    const free = days.filter((d) => d.routine?.name === x.name && !d.workout && d.iso >= today && !taken.has(d.iso));
-    const dest = free.find((d) => d.movedFrom === x.iso) || free.find((d) => week(d.iso) === week(x.iso));
-    if (dest) { x.iso = dest.iso; taken.add(dest.iso); queueCal({ op: 'upsert', iso: x.iso }); }
-    else { state.schedule = state.schedule.filter((y) => y !== x); queueCal({ op: 'delete', eventId: x.eventId }); }
+  if (stale.length) {
+    const taken = new Set(state.schedule.filter((x) => !stale.includes(x)).map((x) => x.iso));
+    const week = (iso) => isoLocal(mondayOf(new Date(`${iso}T12:00:00`)));
+    for (const x of stale) {
+      if (x.off) { state.schedule = state.schedule.filter((y) => y !== x); continue; }
+      const free = days.filter((d) => d.routine?.name === x.name && !d.workout && d.iso >= today && !taken.has(d.iso));
+      const dest = free.find((d) => d.movedFrom === x.iso) || free.find((d) => week(d.iso) === week(x.iso));
+      if (dest) { x.iso = dest.iso; x.auto = false; taken.add(dest.iso); if (x.eventId || x.gcal) syncEvent(x); }
+      else { dropEvent(x); state.schedule = state.schedule.filter((y) => y !== x); }
+    }
+  }
+
+  if (!hasWeek) return;
+  for (const d of days) {
+    const time = wt.days[d.weekday];
+    if (!time || !d.routine || d.workout || d.iso < today || scheduleAt(d.iso)) continue;
+    const x = { iso: d.iso, name: d.routine.name, time, minutes: wt.minutes || 60, gcal: !!wt.gcal, auto: true };
+    state.schedule.push(x);
+    if (x.gcal) queueCal({ op: 'upsert', iso: x.iso });
   }
 }
 
 let calFlushing = false;
-/** Lleva al calendario de Google los cambios pendientes. Sin `interactive`, solo si ya hay un permiso vigente. */
+/** Lleva a Google Calendar los cambios pendientes. Sin `interactive`, solo si ya hay un permiso vigente. */
 async function flushCalendar(interactive = false) {
   if (calFlushing || !state.gcalQueue?.length || !cloud.currentUser()) return;
   calFlushing = true;
+  let done = 0;
   try {
     const token = await cloud.calendarToken({ interactive });
     if (!token) return;
+    const days = calWeeks(scheduleSpan()).flatMap((w) => w.days);
     while (state.gcalQueue.length) {
       const op = state.gcalQueue[0];
       if (op.op === 'delete') await deleteEvent(token, op.eventId);
       else {
-        const entry = scheduleAt(op.iso);
-        const ev = entry && eventFor(entry);
-        if (ev) entry.eventId = (await upsertEvent(token, entry.eventId, ev)).id;
+        const entry = timeAt(op.iso);
+        const ev = entry?.gcal && eventFor(entry, days);
+        if (ev) {
+          const id = eventIdFor(entry.iso);
+          // Si la sesión cambió de día, su evento anterior se borra.
+          if (entry.eventId && entry.eventId !== id) await deleteEvent(token, entry.eventId);
+          entry.eventId = (await upsertEvent(token, id, ev)).id;
+        }
       }
       state.gcalQueue.shift();
+      done++;
+      if (done % 10 === 0) storeLocal();
     }
     save();
     if (interactive) toast(t('Calendario de Google actualizado'));
   } catch (e) {
     console.error(e);
+    if (done) save();
     if (e.status === 401 || e.status === 403) cloud.dropCalendarToken();
     if (interactive) toast(calError(e));
   } finally {
@@ -777,63 +826,122 @@ function calError(e) {
   return t('No se pudo actualizar el calendario: {msg}', { msg: e.message });
 }
 
-/** Elegir la hora de una sesión del plan y, si quieres, crear el evento en Google Calendar. */
-function scheduleDialog(cell) {
-  const cur = scheduleAt(cell.iso);
-  const prev = cur || lastSchedule();
-  const time = prev?.time || '19:00';
-  const minutes = prev?.minutes || 60;
+/** Selectores de hora (HH y MM, de 5 en 5). `empty`: añade la opción "sin hora". */
+function timeSelects(prefix, time, { empty = false, label = '' } = {}) {
+  const hh = time ? time.slice(0, 2) : '';
+  const mm = time && MINS.includes(time.slice(3)) ? time.slice(3) : '00';
+  return `<span class="time-sel">
+    <select name="${prefix}hh" aria-label="${esc(label ? `${label} · ${t('Hora')}` : t('Hora'))}">${empty ? `<option value="" ${hh ? '' : 'selected'}>—</option>` : ''}${Array.from({ length: 24 }, (_, h) => `<option value="${pad2(h)}" ${pad2(h) === hh ? 'selected' : ''}>${pad2(h)}</option>`).join('')}</select>
+    <b>:</b>
+    <select name="${prefix}mm" aria-label="${esc(label ? `${label} · ${t('Minutos')}` : t('Minutos'))}">${MINS.map((m) => `<option value="${m}" ${m === mm ? 'selected' : ''}>${m}</option>`).join('')}</select>
+  </span>`;
+}
+const readTime = (fd, prefix) => (fd.get(`${prefix}hh`) ? `${fd.get(`${prefix}hh`)}:${fd.get(`${prefix}mm`) || '00'}` : '');
+const durSelect = (minutes) => `<select name="minutes">${DURS.map((m) => `<option value="${m}" ${m === minutes ? 'selected' : ''}>${fmtMinutes(m)}</option>`).join('')}</select>`;
+const gcalOption = (checked) => {
   const signed = !!cloud.currentUser();
-  const gcal = cur ? !!cur.eventId || state.gcalQueue.some((x) => x.iso === cell.iso) : signed && state.settings.gcal !== false;
-  const durs = [30, 45, 60, 75, 90, 120];
-  const pad2 = (n) => String(n).padStart(2, '0');
-  const mins = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
-  const mm = mins.includes(time.slice(3)) ? time.slice(3) : '00';
-  openDialog(`
-    <h2>${ic('clock')} ${esc(rName(cell.routine.name))} · ${dayLabel(cell)}</h2>
-    <div class="row" style="margin-top:12px;align-items:flex-end">
-      <label class="field" style="flex:1">${t('Hora')}<select name="hh">${Array.from({ length: 24 }, (_, h) => `<option value="${pad2(h)}" ${pad2(h) === time.slice(0, 2) ? 'selected' : ''}>${pad2(h)}</option>`).join('')}</select></label>
-      <b style="padding-bottom:12px">:</b>
-      <label class="field" style="flex:1"><select name="mm" aria-label="${t('Minutos')}">${mins.map((m) => `<option value="${m}" ${m === mm ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
-    </div>
-    <label class="field" style="margin-top:12px">${t('Duración')}<select name="minutes">${durs.map((m) => `<option value="${m}" ${m === minutes ? 'selected' : ''}>${m < 60 ? t('{n} min', { n: m }) : m % 60 ? t('{h} h {n} min', { h: Math.floor(m / 60), n: m % 60 }) : t('{h} h', { h: m / 60 })}</option>`).join('')}</select></label>
-    <label class="gcal-opt${signed ? '' : ' off'}">
-      <input type="checkbox" name="gcal" ${gcal ? 'checked' : ''} ${signed ? '' : 'disabled'}>
+  return `<label class="gcal-opt${signed ? '' : ' off'}">
+      <input type="checkbox" name="gcal" ${checked && signed ? 'checked' : ''} ${signed ? '' : 'disabled'}>
       <span><b>${ic('calendar')} ${t('Añadir a mi Google Calendar')}</b>
       <small>${signed ? t('El evento lleva en las notas los ejercicios, series, repeticiones, RIR y carga de la sesión.') : t('Inicia sesión con Google para añadirla a tu calendario.')}</small></span>
-    </label>
+    </label>`;
+};
+
+/** Días de la semana con sesiones del plan (con el nombre de la sesión). */
+function planDays() {
+  return WEEKDAYS.map((wd) => ({ wd, r: state.routines.find((r) => r.fromPlan && r.weekday === wd) })).filter((x) => x.r);
+}
+
+/** Horario semanal: la hora de cada día de entreno, que rellena todas las sesiones futuras. */
+function weekTimesDialog() {
+  const wt = state.weekTimes || { days: {}, minutes: 60, gcal: true };
+  const rows = planDays();
+  if (!rows.length) { toast(t('Primero necesitas un plan con días de entreno')); return; }
+  openDialog(`
+    <h2>${ic('clock')} ${t('Horario semanal')}</h2>
+    <p class="muted" style="font-size:var(--fs-sm)">${t('Elige a qué hora entrenas cada día. Se aplica a todas las sesiones que vienen; un día concreto lo puedes cambiar tocándolo en el calendario.')}</p>
+    <div class="week-times">
+      ${rows.map(({ wd, r }, i) => `<div class="wt-row"><span><b>${t(wd)}</b><small class="muted">${esc(rName(r.name))}</small></span>${timeSelects(`d${i}`, wt.days[wd] || '', { empty: true, label: t(wd) })}</div>`).join('')}
+    </div>
+    <label class="field" style="margin-top:12px">${t('Duración')}${durSelect(wt.minutes || 60)}</label>
+    ${gcalOption(wt.gcal !== false)}
+    ${dialogButtons(t('Guardar'))}`,
+  (fd) => {
+    const next = { days: {}, minutes: Number(fd.get('minutes')) || 60, gcal: fd.has('gcal') };
+    rows.forEach(({ wd }, i) => { const tm = readTime(fd, `d${i}`); if (tm) next.days[wd] = tm; });
+    state.weekTimes = next;
+    const today = isoLocal(Date.now());
+    // Las horas que venían del horario anterior se rehacen con el nuevo; las elegidas a mano se respetan.
+    for (const x of [...state.schedule]) {
+      if (!x.auto || x.iso < today) continue;
+      const wd = WEEKDAYS[(new Date(`${x.iso}T12:00:00`).getDay() + 6) % 7];
+      const tm = next.days[wd];
+      if (!tm) { dropEvent(x); state.schedule = state.schedule.filter((y) => y !== x); continue; }
+      const changed = x.time !== tm || x.minutes !== next.minutes || x.gcal !== next.gcal;
+      Object.assign(x, { time: tm, minutes: next.minutes, gcal: next.gcal });
+      if (changed) syncEvent(x);
+    }
+    reconcileSchedule();
+    save(); render();
+    // Se pide el permiso ahora, mientras el toque del botón aún permite abrir la ventana de Google.
+    flushCalendar(true);
+    const n = Object.keys(next.days).length;
+    toast(n ? tn(n, 'Horario guardado para {n} día', 'Horario guardado para {n} días') : t('Horario semanal quitado'));
+  });
+}
+
+/** La hora de una sesión concreta (cambia solo ese día). */
+function scheduleDialog(cell) {
+  const cur = timeAt(cell.iso);
+  const wt = state.weekTimes;
+  const time = cur?.time || wt?.days?.[cell.weekday] || (state.schedule || []).reduce((a, x) => (!x.off && (!a || x.iso > a.iso) ? x : a), null)?.time || '19:00';
+  const minutes = cur?.minutes || wt?.minutes || 60;
+  const gcal = cur ? !!cur.gcal : wt ? wt.gcal !== false : true;
+  openDialog(`
+    <h2>${ic('clock')} ${esc(rName(cell.routine.name))} · ${dayLabel(cell)}</h2>
+    <div class="row" style="margin-top:12px;align-items:flex-end;flex-wrap:wrap">
+      <label class="field">${t('Hora')}${timeSelects('', time)}</label>
+      <label class="field" style="flex:1">${t('Duración')}${durSelect(minutes)}</label>
+    </div>
+    ${gcalOption(gcal)}
     <div class="stack" style="margin-top:12px">
       <button class="block primary" value="ok">${t('Guardar')}</button>
-      ${cur ? `<button class="block ghost danger" value="remove" formnovalidate>${t('Quitar la hora')}</button>` : ''}
+      ${cur ? `<button class="block ghost danger" value="remove" formnovalidate>${t('Quitar la hora de este día')}</button>` : ''}
+      <button class="block ghost" value="week" formnovalidate>${t('Horario semanal…')}</button>
       <button class="block ghost" value="cancel" formnovalidate>${t('Cancelar')}</button>
     </div>`,
   (fd, _f, value) => {
+    if (value === 'week') { weekTimesDialog(); return; }
     if (value === 'remove') {
-      state.schedule = state.schedule.filter((x) => x !== cur);
-      state.gcalQueue = state.gcalQueue.filter((x) => x.iso !== cell.iso);
-      queueCal({ op: 'delete', eventId: cur.eventId });
+      dropEvent(cur);
+      // Si el horario semanal tiene hora ese día, se marca "sin hora" para que no vuelva a rellenarse.
+      if (wt?.days?.[cell.weekday]) Object.assign(cur, { off: true, auto: false });
+      else state.schedule = state.schedule.filter((x) => x !== cur);
       save(); render(); flushCalendar(true);
       toast(t('Hora quitada'));
       return;
     }
-    const tm = `${fd.get('hh')}:${fd.get('mm')}`;
-    if (!/^\d{2}:\d{2}$/.test(tm)) return false;
-    const entry = cur || { iso: cell.iso, name: cell.routine.name };
-    Object.assign(entry, { time: tm, minutes: Number(fd.get('minutes')) || 60 });
-    if (!cur) state.schedule.push(entry);
-    const want = fd.has('gcal');
-    if (signed) state.settings.gcal = want;
-    if (want) queueCal({ op: 'upsert', iso: cell.iso });
-    else if (entry.eventId) { queueCal({ op: 'delete', eventId: entry.eventId }); delete entry.eventId; state.gcalQueue = state.gcalQueue.filter((x) => x.iso !== cell.iso || x.op === 'delete'); }
+    const tm = readTime(fd, '');
+    if (!tm) return false;
+    let entry = scheduleAt(cell.iso);
+    if (!entry) { entry = { iso: cell.iso, name: cell.routine.name }; state.schedule.push(entry); }
+    Object.assign(entry, { name: cell.routine.name, time: tm, minutes: Number(fd.get('minutes')) || 60, gcal: fd.has('gcal'), auto: false, off: false });
+    syncEvent(entry);
     save(); render();
-    // Se pide el permiso ahora, mientras el toque del botón aún permite abrir la ventana de Google.
-    if (signed) flushCalendar(true);
+    flushCalendar(true);
     toast(t('Sesión a las {time}', { time: tm }));
   });
 }
 
 function skipSession(cell) {
   ask(t('¿Saltar «{name}» ({day})? Seguirás con el plan sin recuperarla.', { name: rName(cell.routine.name), day: dayLabel(cell) }), t('Saltar'), () => { setMove(state, cell, null, calCell); commit(); });
+}
+
+/** Texto del botón del horario semanal: "Mar 07:30 · Jue 19:00" o la invitación a ponerlo. */
+function weekTimesSummary() {
+  const d = state.weekTimes?.days || {};
+  const set = WEEKDAYS.filter((wd) => d[wd]);
+  return set.length ? `${t('Horario')}: <span dir="ltr">${set.map((wd) => `${dayShort(wd)} ${d[wd]}`).join(' · ')}</span>` : t('Fijar horario semanal (y Google Calendar)');
 }
 
 function viewCalendar() {
@@ -843,7 +951,7 @@ function viewCalendar() {
   const n = (r) => r.exerciseIds.filter(exById).length;
   let hoy;
   if (today.routine && (today.status === 'planned')) {
-    hoy = `<div class="card accent today-card"><div class="row between"><div><small class="muted">${t('Hoy')} · ${t(today.weekday)}${scheduleAt(today.iso) ? ` · ${scheduleAt(today.iso).time}` : ''}</small><h3>${esc(rName(today.routine.name))}</h3><span class="muted">${tn(n(today.routine), '{n} ejercicio', '{n} ejercicios')}</span></div><button class="primary" data-action="start" data-id="${today.routine.id}">${t('Empezar')}</button></div></div>`;
+    hoy = `<div class="card accent today-card"><div class="row between"><div><small class="muted">${t('Hoy')} · ${t(today.weekday)}${timeAt(today.iso) ? ` · ${timeAt(today.iso).time}` : ''}</small><h3>${esc(rName(today.routine.name))}</h3><span class="muted">${tn(n(today.routine), '{n} ejercicio', '{n} ejercicios')}</span></div><button class="primary" data-action="start" data-id="${today.routine.id}">${t('Empezar')}</button></div></div>`;
   } else if (today.status === 'done' || today.status === 'partial') {
     hoy = `<div class="card today-card"><div class="row between"><div><small class="muted">${t('Hoy')}</small><h3>${today.status === 'partial' ? '◐' : '✓'} ${esc(rName(today.routine.name))}</h3></div><button class="small" data-action="cal-day" data-iso="${today.iso}">${t('Ver')}</button></div></div>`;
   } else if (today.status === 'extra') {
@@ -856,7 +964,7 @@ function viewCalendar() {
     const label = d.routine ? shortName(rName(d.routine.name)) : d.status === 'extra' ? shortName(rName(d.extra.name)) : d.status === 'moved' ? `${fwd()} ${Number(d.movedTo.slice(8))}` : d.status === 'skipped' ? t('saltada') : '';
     const click = d.routine || d.extra || d.status === 'moved' || d.status === 'skipped';
     return `<button class="cal-day ${d.status} ${d.isToday ? 'today' : ''}" ${click ? `data-action="cal-day" data-iso="${d.iso}"` : 'disabled'} aria-label="${t(d.weekday)} ${d.date.getDate()}${label ? `, ${esc(label)}` : ''}">
-      <small>${dayLetter(d.idx)}</small><b>${d.date.getDate()}</b><i${d.status === 'planned' && scheduleAt(d.iso) ? ' class="tm"' : ''}>${d.status === 'planned' && scheduleAt(d.iso) ? scheduleAt(d.iso).time : d.movedFrom && d.status === 'planned' ? '↪' : sym[d.status]}</i><em>${esc(label)}</em></button>`;
+      <small>${dayLetter(d.idx)}</small><b>${d.date.getDate()}</b><i${d.status === 'planned' && timeAt(d.iso) ? ' class="tm"' : ''}>${d.status === 'planned' && timeAt(d.iso) ? timeAt(d.iso).time : d.movedFrom && d.status === 'planned' ? '↪' : sym[d.status]}</i><em>${esc(label)}</em></button>`;
   };
   const grid = weeks.map((w, i) => {
     const lab = planWeekLabel(w.days[0].date.getTime());
@@ -866,7 +974,7 @@ function viewCalendar() {
   const gq = state.gcalQueue?.length && cloud.currentUser() && !calFlushing
     ? `<div class="card row between"><span class="muted">${ic('calendar')} ${t('Hay cambios pendientes en tu Google Calendar')}</span><button class="small" data-action="gcal-sync">${t('Actualizar')}</button></div>` : '';
   return `${hoy}${pendingCard(weeks)}${gq}<div class="cal">${grid}</div>
-    <p class="muted cal-hint">${ic('clock')} ${t('Toca una sesión para ponerle hora y añadirla a tu Google Calendar.')}</p>`;
+    <button class="block cal-week-btn" data-action="week-times">${ic('clock')} ${weekTimesSummary()}</button>`;
 }
 
 function viewTrain() {
@@ -1506,13 +1614,13 @@ const actions = {
       const canMove = !day.workout;
       openDialog(`
         <h2>${title} · ${esc(rName(r.name))}</h2>
-        ${scheduleAt(day.iso) && !day.workout ? `<p class="muted">${ic('clock')} ${scheduleAt(day.iso).time}${scheduleAt(day.iso).eventId ? ` · ${t('en tu Google Calendar')}` : ''}</p>` : ''}
+        ${timeAt(day.iso) && !day.workout ? `<p class="muted">${ic('clock')} ${timeAt(day.iso).time}${timeAt(day.iso).eventId ? ` · ${t('en tu Google Calendar')}` : ''}</p>` : ''}
         ${note}
         <ul class="exlist">${items}${adj}</ul>
         <div class="stack" style="margin-top:12px">
           <button class="block primary" value="start">${day.workout ? t('Hacerlo otra vez') : day.status === 'missed' ? t('Hacerlo ahora') : t('Empezar')}</button>
           ${day.status === 'partial' && day.workout?.skipped?.length ? `<button class="block" value="rest">${t('Hacer lo que faltó')}</button>` : ''}
-          ${canMove && !day.isPast ? `<button class="block" value="time">${ic('clock')} ${scheduleAt(day.iso) ? t('A las {time} · cambiar', { time: scheduleAt(day.iso).time }) : t('Poner hora')}</button>` : ''}
+          ${canMove && !day.isPast ? `<button class="block" value="time">${ic('clock')} ${timeAt(day.iso) ? t('A las {time} · cambiar', { time: timeAt(day.iso).time }) : t('Poner hora')}</button>` : ''}
           ${canMove ? `<button class="block" value="move">${ic('calendar')} ${t('Mover a otro día')}</button><button class="block" value="skip">${t('Saltar esta sesión')}</button>` : ''}
           ${day.movedFrom && !day.workout ? `<button class="block ghost" value="back">${t('Volver a su día')}</button>` : ''}
           ${day.workout ? `<button class="block" value="history">${t('Ver en historial')}</button>` : ''}
@@ -1551,6 +1659,7 @@ const actions = {
     return false;
   },
   'gcal-sync'() { flushCalendar(true); return false; },
+  'week-times'() { weekTimesDialog(); return false; },
   'cal-move'(_, el) { const c = calCell(el.dataset.iso); if (c?.routine) moveDialog(c); return false; },
   'cal-skip'(_, el) { const c = calCell(el.dataset.iso); if (c?.routine) skipSession(c); return false; },
   // ---- unir ejercicios duplicados
@@ -1874,11 +1983,13 @@ async function syncPull() {
     } else {
       const before = JSON.stringify(state);
       state = mergeStates(state, remote, u.uid);
+      reconcileSchedule();
       storeLocal();
       if (JSON.stringify(state) !== before && !document.querySelector('dialog[open]')) { applyLang(); render(); }
       await cloud.pushState(state);
     }
     setSyncStatus('ok');
+    flushCalendar();
   } catch (e) {
     console.error(e);
     setSyncStatus('error');
@@ -2002,6 +2113,8 @@ cloud.initCloud((u) => {
 }).catch((e) => console.error('No se pudo iniciar Firebase', e));
 
 applyLang();
+// Las sesiones nuevas que entran en el calendario toman la hora del horario semanal.
+try { reconcileSchedule(); storeLocal(); } catch (e) { console.error(e); }
 render();
 setInterval(tick, 1000);
 
