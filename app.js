@@ -786,14 +786,22 @@ function scheduleDialog(cell) {
   const signed = !!cloud.currentUser();
   const gcal = cur ? !!cur.eventId || state.gcalQueue.some((x) => x.iso === cell.iso) : signed && state.settings.gcal !== false;
   const durs = [30, 45, 60, 75, 90, 120];
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const mins = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
+  const mm = mins.includes(time.slice(3)) ? time.slice(3) : '00';
   openDialog(`
     <h2>${ic('clock')} ${esc(rName(cell.routine.name))} · ${dayLabel(cell)}</h2>
-    <div class="row" style="margin-top:12px">
-      <label class="field" style="flex:1">${t('Hora')}<input type="time" name="time" value="${time}" required></label>
-      <label class="field" style="flex:1">${t('Duración')}<select name="minutes">${durs.map((m) => `<option value="${m}" ${m === minutes ? 'selected' : ''}>${m < 60 ? t('{n} min', { n: m }) : m % 60 ? t('{h} h {n} min', { h: Math.floor(m / 60), n: m % 60 }) : t('{h} h', { h: m / 60 })}</option>`).join('')}</select></label>
+    <div class="row" style="margin-top:12px;align-items:flex-end">
+      <label class="field" style="flex:1">${t('Hora')}<select name="hh">${Array.from({ length: 24 }, (_, h) => `<option value="${pad2(h)}" ${pad2(h) === time.slice(0, 2) ? 'selected' : ''}>${pad2(h)}</option>`).join('')}</select></label>
+      <b style="padding-bottom:12px">:</b>
+      <label class="field" style="flex:1"><select name="mm" aria-label="${t('Minutos')}">${mins.map((m) => `<option value="${m}" ${m === mm ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
     </div>
-    <label class="check-row" style="margin-top:12px"><input type="checkbox" name="gcal" ${gcal ? 'checked' : ''} ${signed ? '' : 'disabled'}> ${t('Añadir a mi Google Calendar')}</label>
-    <p class="muted" style="font-size:var(--fs-sm)">${signed ? t('El evento lleva en las notas los ejercicios, series, repeticiones, RIR y carga de la sesión.') : t('Inicia sesión con Google para añadirla a tu calendario.')}</p>
+    <label class="field" style="margin-top:12px">${t('Duración')}<select name="minutes">${durs.map((m) => `<option value="${m}" ${m === minutes ? 'selected' : ''}>${m < 60 ? t('{n} min', { n: m }) : m % 60 ? t('{h} h {n} min', { h: Math.floor(m / 60), n: m % 60 }) : t('{h} h', { h: m / 60 })}</option>`).join('')}</select></label>
+    <label class="gcal-opt${signed ? '' : ' off'}">
+      <input type="checkbox" name="gcal" ${gcal ? 'checked' : ''} ${signed ? '' : 'disabled'}>
+      <span><b>${ic('calendar')} ${t('Añadir a mi Google Calendar')}</b>
+      <small>${signed ? t('El evento lleva en las notas los ejercicios, series, repeticiones, RIR y carga de la sesión.') : t('Inicia sesión con Google para añadirla a tu calendario.')}</small></span>
+    </label>
     <div class="stack" style="margin-top:12px">
       <button class="block primary" value="ok">${t('Guardar')}</button>
       ${cur ? `<button class="block ghost danger" value="remove" formnovalidate>${t('Quitar la hora')}</button>` : ''}
@@ -808,7 +816,7 @@ function scheduleDialog(cell) {
       toast(t('Hora quitada'));
       return;
     }
-    const tm = String(fd.get('time') || '');
+    const tm = `${fd.get('hh')}:${fd.get('mm')}`;
     if (!/^\d{2}:\d{2}$/.test(tm)) return false;
     const entry = cur || { iso: cell.iso, name: cell.routine.name };
     Object.assign(entry, { time: tm, minutes: Number(fd.get('minutes')) || 60 });
