@@ -148,7 +148,7 @@ export const LEGAL = {
       ['11. Limitación de responsabilidad', ['En la medida máxima que permita la ley, los responsables de Gymonkey no serán responsables de lesiones, daños para la salud, pérdida de datos ni daños indirectos derivados del uso de la app o de seguir sus sugerencias. Nada de esto limita los derechos que te reconozca la ley de protección al consumidor de tu país.']],
       ['12. Baja', ['Puedes dejar de usar la app cuando quieras y pedir que borremos tu cuenta y tus datos. También podemos cerrar cuentas que incumplan estos términos o dejar de ofrecer el servicio, avisando con antelación razonable cuando sea posible.']],
       ['13. Cambios', ['Podemos actualizar estos términos. Publicaremos la versión nueva en esta página con su fecha. Si los cambios son importantes, te lo indicaremos en la app. Seguir usándola después significa que aceptas los cambios.']],
-      ['14. Ley aplicable y contacto', ['Estos términos se rigen por la ley del país de residencia del responsable del servicio, sin perjuicio de las normas imperativas que te protejan como consumidor. Para cualquier consulta, escríbenos al correo de contacto indicado al final de esta página.']],
+      ['14. Ley aplicable y contacto', ['Estos términos se rigen por las leyes del Estado de Israel, y cualquier disputa se someterá a los tribunales competentes de Israel, sin perjuicio de las normas imperativas que te protejan como consumidor en tu país de residencia. Para cualquier consulta, escríbenos a gymonkeyapp@gmail.com.']],
     ],
     privacy: [
       ['Qué datos tratamos', ['Datos de tu cuenta de Google: nombre, correo electrónico, foto de perfil e identificador de usuario, para iniciar sesión y asociar tus datos a tu cuenta.', 'Datos de entrenamiento que introduces: perfil y objetivos del cuestionario (por ejemplo, edad, peso, experiencia, material y lesiones o molestias que decidas contar), plan, rutinas, entrenos, series, cargas, notas y ajustes.', 'Si activas Google Calendar: acceso para crear, modificar y borrar los eventos de tus sesiones. Gymonkey solo trabaja con los eventos que crea; no lee ni guarda el resto de tu calendario.']],
@@ -158,9 +158,9 @@ export const LEGAL = {
       ['Dónde se guardan', ['Con sesión iniciada, en Google Firebase (Firestore), protegidos por reglas que solo te permiten acceder a tus propios datos. Sin sesión, en el almacenamiento local de tu navegador. La app no usa cookies de seguimiento ni herramientas de analítica de terceros.']],
       ['Con quién se comparten', ['Solo con los proveedores que hacen funcionar la app y únicamente para eso: Google (cuenta, base de datos y calendario), Vercel (alojamiento y servidor), Anthropic (IA) y Upstash (contadores de uso diario, asociados a tu identificador de usuario). Pueden tratar datos fuera de tu país con las garantías que exige la ley.']],
       ['Cuánto tiempo', ['Conservamos tus datos mientras tengas la cuenta. Si pides la baja, los borramos en un plazo razonable, salvo lo que la ley obligue a conservar. Los contadores de uso se borran a los pocos días.']],
-      ['Tus derechos', ['Puedes acceder a tus datos, corregirlos, exportarlos (desde la app) y pedir que los borremos. Puedes retirar el acceso a Google Calendar cuando quieras desde la configuración de tu cuenta de Google (Seguridad → Apps de terceros). Si crees que no tratamos bien tus datos, puedes reclamar ante la autoridad de protección de datos de tu país.']],
+      ['Tus derechos', ['Puedes acceder a tus datos, corregirlos, exportarlos (desde la app) y pedir que los borremos. Puedes retirar el acceso a Google Calendar cuando quieras desde la configuración de tu cuenta de Google (Seguridad → Apps de terceros). Si crees que no tratamos bien tus datos, puedes reclamar ante la Autoridad de Protección de la Privacidad de Israel o ante la autoridad de protección de datos de tu país.']],
       ['Menores', ['La app no está dirigida a menores de 16 años y no recogemos sus datos a sabiendas.']],
-      ['Cambios y contacto', ['Si cambia esta política, publicaremos la nueva versión aquí con su fecha. Para ejercer tus derechos o cualquier consulta sobre privacidad, escríbenos al correo de contacto.']],
+      ['Cambios y contacto', ['Si cambia esta política, publicaremos la nueva versión aquí con su fecha. Para ejercer tus derechos o cualquier consulta sobre privacidad, escríbenos a gymonkeyapp@gmail.com.']],
     ],
     contact: 'Contacto',
   },
@@ -184,7 +184,7 @@ export const LEGAL = {
       ['11. Limitation of liability', ['To the fullest extent permitted by law, the operators of Gymonkey are not liable for injuries, health damage, data loss or indirect damages arising from using the app or following its suggestions. Nothing here limits the rights you have under the consumer protection law of your country.']],
       ['12. Closing your account', ['You can stop using the app at any time and ask us to delete your account and data. We may also close accounts that breach these terms or stop offering the service, giving reasonable notice when possible.']],
       ['13. Changes', ['We may update these terms. We will publish the new version on this page with its date and let you know in the app if the changes are significant. Continuing to use the app afterwards means you accept the changes.']],
-      ['14. Governing law and contact', ['These terms are governed by the law of the country of residence of the service operator, without prejudice to mandatory rules that protect you as a consumer. For any question, write to the contact email shown at the end of this page.']],
+      ['14. Governing law and contact', ['These terms are governed by the laws of the State of Israel, and any dispute will be subject to the competent courts of Israel, without prejudice to mandatory rules that protect you as a consumer in your country of residence. For any question, write to gymonkeyapp@gmail.com.']],
     ],
     privacy: [
       ['What data we process', ['Your Google account data: name, email address, profile photo and user ID, to sign you in and link your data to your account.', 'Training data you enter: profile and goals from the questionnaire (for example age, weight, experience, equipment and any injuries or discomfort you choose to share), plan, routines, workouts, sets, loads, notes and settings.', 'If you enable Google Calendar: access to create, change and delete the events for your sessions. Gymonkey only works with the events it creates; it does not read or store the rest of your calendar.']],
@@ -194,9 +194,9 @@ export const LEGAL = {
       ['Where it is stored', ['When you are signed in, in Google Firebase (Firestore), protected by rules that only let you access your own data. When you are not, in your browser’s local storage. The app does not use tracking cookies or third-party analytics.']],
       ['Who it is shared with', ['Only with the providers that run the app, and only for that purpose: Google (account, database and calendar), Vercel (hosting and server), Anthropic (AI) and Upstash (daily usage counters, linked to your user ID). They may process data outside your country with the safeguards required by law.']],
       ['How long we keep it', ['We keep your data while you have an account. If you ask us to delete it, we do so within a reasonable time, except what the law requires us to keep. Usage counters are deleted after a few days.']],
-      ['Your rights', ['You can access, correct, export (from the app) and ask us to delete your data. You can revoke Google Calendar access at any time from your Google Account settings (Security → Third-party apps). If you believe we are not handling your data properly, you can complain to the data protection authority in your country.']],
+      ['Your rights', ['You can access, correct, export (from the app) and ask us to delete your data. You can revoke Google Calendar access at any time from your Google Account settings (Security → Third-party apps). If you believe we are not handling your data properly, you can complain to the Israel Privacy Protection Authority or to the data protection authority in your country.']],
       ['Children', ['The app is not intended for children under 16 and we do not knowingly collect their data.']],
-      ['Changes and contact', ['If this policy changes, we will publish the new version here with its date. To exercise your rights or for any privacy question, write to the contact email.']],
+      ['Changes and contact', ['If this policy changes, we will publish the new version here with its date. To exercise your rights or for any privacy question, write to gymonkeyapp@gmail.com.']],
     ],
     contact: 'Contact',
   },
@@ -220,7 +220,7 @@ export const LEGAL = {
       ['11. הגבלת אחריות', ['במידה המרבית שהחוק מתיר, מפעילי Gymonkey לא יהיו אחראים לפציעות, לנזק בריאותי, לאובדן נתונים או לנזקים עקיפים הנובעים מהשימוש באפליקציה או מביצוע ההמלצות שלה. אין באמור כדי לגרוע מזכויותיך לפי דיני הגנת הצרכן במדינתך.']],
       ['12. סגירת חשבון', ['אפשר להפסיק להשתמש באפליקציה בכל עת ולבקש שנמחק את החשבון והנתונים. אנו רשאים גם לסגור חשבונות שמפרים תנאים אלה או להפסיק את השירות, בהודעה מוקדמת סבירה כשהדבר אפשרי.']],
       ['13. שינויים', ['אנו עשויים לעדכן תנאים אלה. הגרסה החדשה תפורסם בעמוד זה עם תאריך, ונודיע באפליקציה אם השינויים מהותיים. המשך השימוש לאחר מכן מהווה הסכמה לשינויים.']],
-      ['14. הדין החל ויצירת קשר', ['תנאים אלה כפופים לדין של מדינת מגוריו של מפעיל השירות, מבלי לגרוע מכללים מחייבים שמגנים עליך כצרכן. לכל שאלה, כתוב לכתובת הדוא״ל ליצירת קשר שמופיעה בסוף עמוד זה.']],
+      ['14. הדין החל ויצירת קשר', ['תנאים אלה כפופים לדיני מדינת ישראל, וכל מחלוקת תתברר בבתי המשפט המוסמכים בישראל, מבלי לגרוע מכללים מחייבים שמגנים עליך כצרכן במדינת מגוריך. לכל שאלה, כתוב אלינו לכתובת gymonkeyapp@gmail.com.']],
     ],
     privacy: [
       ['אילו נתונים אנו מעבדים', ['נתוני חשבון Google: שם, כתובת דוא״ל, תמונת פרופיל ומזהה משתמש, כדי לחבר אותך ולשייך את הנתונים לחשבונך.', 'נתוני אימון שאתה מזין: פרופיל ומטרות מהשאלון (למשל גיל, משקל, ניסיון, ציוד ופציעות או כאבים שתבחר לשתף), תוכנית, שגרות, אימונים, סטים, משקלים, הערות והגדרות.', 'אם תפעיל את יומן Google: גישה ליצירה, לשינוי ולמחיקה של אירועי האימונים שלך. Gymonkey עובד רק עם האירועים שהוא יוצר; הוא לא קורא ולא שומר את שאר היומן שלך.']],
@@ -230,16 +230,16 @@ export const LEGAL = {
       ['היכן הם נשמרים', ['כשאתה מחובר, ב-Google Firebase (Firestore), תחת כללים שמאפשרים לך לגשת רק לנתונים שלך. כשאינך מחובר, באחסון המקומי של הדפדפן. האפליקציה אינה משתמשת בעוגיות מעקב או בכלי ניתוח של צד שלישי.']],
       ['עם מי הם משותפים', ['רק עם הספקים שמפעילים את האפליקציה ולמטרה זו בלבד: Google (חשבון, מסד נתונים ויומן), Vercel (אחסון ושרת), Anthropic (בינה מלאכותית) ו-Upstash (מוני שימוש יומי, המקושרים למזהה המשתמש שלך). הם עשויים לעבד נתונים מחוץ למדינתך בכפוף לאמצעי ההגנה שהחוק דורש.']],
       ['כמה זמן', ['אנו שומרים את הנתונים כל עוד יש לך חשבון. אם תבקש למחוק אותם, נעשה זאת תוך זמן סביר, למעט מה שהחוק מחייב לשמור. מוני השימוש נמחקים אחרי ימים ספורים.']],
-      ['הזכויות שלך', ['אפשר לעיין בנתונים, לתקן אותם, לייצא אותם (מתוך האפליקציה) ולבקש למחוק אותם. אפשר לבטל את הגישה ליומן Google בכל עת בהגדרות חשבון Google (אבטחה ← אפליקציות של צד שלישי). אם אתה סבור שאיננו מטפלים בנתונים כראוי, אפשר להגיש תלונה לרשות להגנת הפרטיות במדינתך.']],
+      ['הזכויות שלך', ['אפשר לעיין בנתונים, לתקן אותם, לייצא אותם (מתוך האפליקציה) ולבקש למחוק אותם. אפשר לבטל את הגישה ליומן Google בכל עת בהגדרות חשבון Google (אבטחה ← אפליקציות של צד שלישי). אם אתה סבור שאיננו מטפלים בנתונים כראוי, אפשר להגיש תלונה לרשות להגנת הפרטיות בישראל או לרשות להגנת המידע במדינתך.']],
       ['קטינים', ['האפליקציה אינה מיועדת לילדים מתחת לגיל 16 ואיננו אוספים ביודעין את הנתונים שלהם.']],
-      ['שינויים ויצירת קשר', ['אם המדיניות תשתנה, נפרסם כאן את הגרסה החדשה עם תאריך. למימוש זכויותיך או לכל שאלה בנושא פרטיות, כתוב לכתובת הדוא״ל ליצירת קשר.']],
+      ['שינויים ויצירת קשר', ['אם המדיניות תשתנה, נפרסם כאן את הגרסה החדשה עם תאריך. למימוש זכויותיך או לכל שאלה בנושא פרטיות, כתוב אלינו לכתובת gymonkeyapp@gmail.com.']],
     ],
     contact: 'יצירת קשר',
   },
 };
 
 /** Correo de contacto que se muestra en la página legal (vacío: no se muestra). */
-export const CONTACT_EMAIL = '';
+export const CONTACT_EMAIL = 'gymonkeyapp@gmail.com';
 
 /** Idioma de estas páginas: el elegido antes aquí o en la app; si no, el del navegador. */
 export function pickLang() {
