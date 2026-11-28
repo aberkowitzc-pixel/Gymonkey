@@ -1,5 +1,5 @@
 // Service worker: cachea los archivos de la app para que funcione sin conexión.
-const CACHE = 'gymonkey-v20';
+const CACHE = 'gymonkey-v21';
 const ASSETS = ['./', 'index.html', 'app.html', 'landing.js', 'landing.css', 'site.js', 'legal.html', 'legal.js', 'tokens.css', 'styles.css', 'app.js', 'plan.js', 'cloud.js', 'config.js', 'demo.js', 'progression.js', 'context.js', 'sessions.js', 'exercises.js', 'weekplan.js', 'week.js', 'loads.js', 'calendar.js', 'gcal.js', 'suggest.js', 'i18n.js', 'icons.js', 'fonts/rubik-latin.woff2', 'fonts/rubik-latin-ext.woff2', 'fonts/rubik-hebrew.woff2', 'fonts/heebo-latin.woff2', 'fonts/heebo-latin-ext.woff2', 'fonts/heebo-hebrew.woff2', 'fonts/jetbrains-mono-latin.woff2', 'lang/en.js', 'lang/he.js', 'lang/exercises.js', 'icon.svg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
